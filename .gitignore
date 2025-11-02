@@ -1,0 +1,10 @@
+.idea/ 
+*.iml 
+target/ 
+build/ 
+logs/ 
+uploads/ 
+*.log 
+node_modules/ 
+dist/ 
+.DS_Store 

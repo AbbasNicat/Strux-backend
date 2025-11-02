@@ -1,0 +1,17 @@
+
+
+Remove Worker from Project
+
+DELETE http://localhost:9093/api/workers/{workerId}/projects/{projectId}
+
+Headers:
+       X-User-Id:
+
+Add Worker to Project
+
+POST http://localhost:9093/api/workers/{workerId}/projects/{projectId}
+
+Headers:
+       X-User-Id:
+
+bunlar project testleri yazilandan sonra denenecek

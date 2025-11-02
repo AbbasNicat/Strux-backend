@@ -1,0 +1,217 @@
+spring:
+  application:
+    name: api-gateway
+
+  # ============================================
+  # SPRING CLOUD GATEWAY
+  # ============================================
+  cloud:
+    gateway:
+      routes:
+        # ==================== AUTH SERVICE (PUBLIC) ====================
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          # No TokenRelay filter - this is public
+
+        # ==================== USER SERVICE ====================
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - TokenRelay=
+
+        # ==================== COMPANY SERVICE ====================
+        - id: company-service
+          uri: lb://company-service
+          predicates:
+            - Path=/api/company/**
+          filters:
+            - TokenRelay=
+
+        # ==================== DOCUMENT SERVICE ====================
+        - id: document-service
+          uri: lb://document-service
+          predicates:
+            - Path=/api/documents/**
+          filters:
+            - TokenRelay=
+
+        # ==================== ISSUE SERVICE ====================
+        - id: issue-service
+          uri: lb://issue-service
+          predicates:
+            - Path=/api/issues/**
+          filters:
+            - TokenRelay=
+
+        # ==================== LOCATION SERVICE ====================
+        - id: location-service
+          uri: lb://location-service
+          predicates:
+            - Path=/api/locations/**
+          filters:
+            - TokenRelay=
+
+        # ==================== NOTIFICATION SERVICE ====================
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - TokenRelay=
+
+        # ==================== PROGRESS SERVICE ====================
+        - id: progress-service
+          uri: lb://progress-service
+          predicates:
+            - Path=/api/progress/**
+          filters:
+            - TokenRelay=
+
+        # ==================== PROJECT SERVICE ====================
+        - id: project-service
+          uri: lb://project-service
+          predicates:
+            - Path=/api/projects/**
+          filters:
+            - TokenRelay=
+
+        # ==================== SCHEDULE SERVICE ====================
+        - id: schedule-service
+          uri: lb://schedule-service
+          predicates:
+            - Path=/api/schedules/**
+          filters:
+            - TokenRelay=
+
+        # ==================== TASK SERVICE ====================
+        - id: task-service
+          uri: lb://task-service
+          predicates:
+            - Path=/api/tasks/**
+          filters:
+            - TokenRelay=
+
+        # ==================== UNIT SERVICE ====================
+        - id: unit-service
+          uri: lb://unit-service
+          predicates:
+            - Path=/api/units/**
+          filters:
+            - TokenRelay=
+
+      # Global CORS Configuration
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - "http://localhost:3000"
+              - "http://localhost:3001"
+              - "http://localhost:4200"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+              - PATCH
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+
+  # ============================================
+  # SECURITY - OAuth2 Resource Server
+  # ============================================
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8080/realms/Agrovia-realm
+          jwk-set-uri: http://localhost:8080/realms/Agrovia-realm/protocol/openid-connect/certs
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  port: 8081
+
+# ============================================
+# EUREKA CLIENT
+# ============================================
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+
+# ============================================
+# ACTUATOR
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+
+# ============================================
+# KEYCLOAK CONFIGURATION
+# ============================================
+keycloak:
+  server-url: http://localhost:8080
+  realm: Agrovia-realm
+  admin-client-id: admin-cli
+  admin-username: admin_new
+  admin-password: admin123
+  client-id: agrovia-backend
+  client-secret: AC8yIL5OBnfFntA16ykoxSkc6r9mxeRN
+
+# ============================================
+# RESILIENCE4J CIRCUIT BREAKER
+# ============================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      auth-service:
+        register-health-indicator: true
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30000
+      user-service:
+        register-health-indicator: true
+        sliding-window-size: 10
+      company-service:
+        register-health-indicator: true
+        sliding-window-size: 10
+      document-service:
+        register-health-indicator: true
+        sliding-window-size: 10
+      project-service:
+        register-health-indicator: true
+        sliding-window-size: 10
+
+# ============================================
+# LOGGING
+# ============================================
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+    reactor.netty: DEBUG
+    com.agrovia.gateway: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

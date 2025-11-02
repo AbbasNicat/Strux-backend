@@ -1,0 +1,10 @@
+
+1) butun servislerin application.yml nin yazilmasi
+2) ortaq config dosyalarinin saxlanmasi ucun bi config server
+3) deploy ucun docker file larinin yazilmasi
+4) google loginde normal giris yapilirken default role olarak user atasamda, isci ve ya diger
+kullanicilar google la login yaparsa default olarak user atanmasi dogru olmayacagi icin
+frontend de login yapildikdan sonra role secme ekranininda gelmesi, tebii ki buna uygun olaraq
+backend de duzenlenmelidir.
+5) auth service de gercek email onaylama testingi kaldi
+6) notification service de gercek mail e notification gonderme kaldi

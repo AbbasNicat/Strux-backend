@@ -1,0 +1,4 @@
+1) Auth servisde ilkin giris email, password ,firstname,lastname vs.
+2) User servisinde genel user bilgilerinin girilmesi bio, city vs.
+3) Auth da Worker secmisse role u, worker icin ayri bi tamamlama request i experience year vs. user
+servisinde olan workerprofile a uygun

@@ -1,0 +1,32 @@
+package com.strux.document_service.enums;
+
+public enum DocumentType {
+
+    CONTRACT,
+    INVOICE,
+    REPORT,
+    IMAGE,
+    VIDEO,
+
+    PROGRESS_PHOTO,
+    PROGRESS_VIDEO,
+    COMPLETION_EVIDENCE,
+    BEFORE_PHOTO,
+    AFTER_PHOTO,
+
+    INSPECTION_REPORT,
+    QUALITY_CHECK,
+    SAFETY_INCIDENT,
+    DEFECT_REPORT,
+
+    MATERIAL_DELIVERY,
+    EQUIPMENT_LOG,
+
+    BLUEPRINT,
+    FLOOR_PLAN,
+    SITE_PLAN,
+
+    PERMIT,
+    WARRANTY,
+    CERTIFICATE
+}
