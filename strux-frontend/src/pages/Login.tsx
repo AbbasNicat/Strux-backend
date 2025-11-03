@@ -9,6 +9,7 @@ import {
   Box,
   Divider,
   CircularProgress,
+  Alert,
 } from '@mui/material';
 import { Google as GoogleIcon } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,6 +18,7 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -27,16 +29,41 @@ const Login: React.FC = () => {
       ...formData,
       [e.target.name]: e.target.value,
     });
+    setError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
+
     try {
       await login(formData);
-      navigate('/dashboard');
-    } catch (error) {
+      // Login başarılı oldu, yönlendirme yapılacak
+      navigate('/dashboard', { replace: true });
+    } catch (error: any) {
       console.error('Login failed:', error);
+
+      // Detaylı hata mesajı
+      let errorMessage = 'Giriş başarısız.';
+
+      if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+        errorMessage = 'Backend servisleri çalışmıyor! API Gateway (port 8081) ve Auth Service (port 9091) başlatılmalı.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'E-posta veya şifre hatalı!';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setError(errorMessage);
+      console.error('Detaylı hata:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code
+      });
     } finally {
       setLoading(false);
     }
@@ -52,6 +79,12 @@ const Login: React.FC = () => {
           İnşaat Yönetim Sistemi
         </Typography>
 
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
         <form onSubmit={handleSubmit}>
           <TextField
             fullWidth
@@ -63,6 +96,7 @@ const Login: React.FC = () => {
             margin="normal"
             required
             autoComplete="email"
+            error={!!error}
           />
           <TextField
             fullWidth
@@ -74,6 +108,7 @@ const Login: React.FC = () => {
             margin="normal"
             required
             autoComplete="current-password"
+            error={!!error}
           />
 
           <Button

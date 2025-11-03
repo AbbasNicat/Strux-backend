@@ -27,6 +27,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } catch (error) {
         console.error('Failed to initialize auth:', error);
+        // Token varsa ama parse edilemiyorsa temizle
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
       } finally {
         setLoading(false);
       }
@@ -36,31 +40,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (credentials: LoginRequest) => {
-    try {
-      const response: AuthResponse = await authService.login(credentials);
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
-      toast.success('Başarıyla giriş yapıldı!');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Giriş başarısız');
-      throw error;
-    }
+    const response: AuthResponse = await authService.login(credentials);
+    localStorage.setItem('accessToken', response.accessToken);
+    localStorage.setItem('refreshToken', response.refreshToken);
+    localStorage.setItem('user', JSON.stringify(response.user));
+    setUser(response.user);
+    // Login component'te yönlendirme yapılacağı için burada toast yok
   };
 
   const register = async (data: RegisterRequest) => {
-    try {
-      const response: AuthResponse = await authService.register(data);
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
-      toast.success('Kayıt başarılı!');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Kayıt başarısız');
-      throw error;
-    }
+    const response: AuthResponse = await authService.register(data);
+    localStorage.setItem('accessToken', response.accessToken);
+    localStorage.setItem('refreshToken', response.refreshToken);
+    localStorage.setItem('user', JSON.stringify(response.user));
+    setUser(response.user);
   };
 
   const logout = async () => {
