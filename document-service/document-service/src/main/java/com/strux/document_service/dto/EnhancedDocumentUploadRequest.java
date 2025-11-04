@@ -30,17 +30,15 @@ public class EnhancedDocumentUploadRequest {
 
     private Boolean isPublic;
 
-    // === STRUX SPECIFIC FIELDS ===
 
-    // Task/Progress related
-    private String taskId;                    // İlişkili task
-    private Integer completionPercentage;     // Bu iş ilə tamamlanma faizi
-    private String phaseId;                   // İnşaat fazası
+    private String taskId;
+    private Integer completionPercentage;
+    private String phaseId;
 
     // Location
-    private Double latitude;                  // GPS koordinatı
-    private Double longitude;                 // GPS koordinatı
-    private String locationDescription;       // "2-ci mərtəbə, mətbəx"
+    private Double latitude;
+    private Double longitude;
+    private String locationDescription;
 
     // Approval workflow
     private Boolean requiresApproval;         // Admin təsdiqi tələb olunur?

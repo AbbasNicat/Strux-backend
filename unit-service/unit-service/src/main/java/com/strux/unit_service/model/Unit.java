@@ -22,30 +22,27 @@ public class Unit {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    // Basic Info
-    private String unitNumber;  // A1, B2, C3, etc.
+    private String unitNumber;
     private String unitName;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    // Ownership
     private String companyId;
     private String projectId;
-    private String buildingId;  // Hansı binaya aid
+    private String buildingId;
 
-    // Location Details
-    private String blockName;   // A Blok, B Blok
+    private String blockName;
     private Integer floor;
-    private String section;     // Seksiya
+    private String section;
 
-    // Physical Properties
+
     @Enumerated(EnumType.STRING)
     private UnitType type;  // APARTMENT, VILLA, OFFICE, SHOP, PARKING, STORAGE
 
-    private BigDecimal grossArea;  // Ümumi sahə (m²)
-    private BigDecimal netArea;    // Xalis sahə (m²)
-    private Integer roomCount;     // 1+1, 2+1, 3+1
+    private BigDecimal grossArea;
+    private BigDecimal netArea;
+    private Integer roomCount;
     private Integer bedroomCount;
     private Integer bathroomCount;
     private Integer balconyCount;
@@ -58,7 +55,6 @@ public class Unit {
     private Boolean hasTerrace;
     private BigDecimal terraceArea;
 
-    // Status & Progress
     @Enumerated(EnumType.STRING)
     private UnitStatus status;  // PLANNED, IN_CONSTRUCTION, COMPLETED, SOLD, DELIVERED
 
@@ -67,12 +63,10 @@ public class Unit {
     @Enumerated(EnumType.STRING)
     private ConstructionPhase currentPhase;  // FOUNDATION, STRUCTURE, ROUGH_CONSTRUCTION, FINISHING, etc.
 
-    // Construction Timeline
     private LocalDateTime constructionStartDate;
     private LocalDateTime estimatedCompletionDate;
     private LocalDateTime actualCompletionDate;
 
-    // Sales & Ownership
     @Enumerated(EnumType.STRING)
     private SaleStatus saleStatus;  // AVAILABLE, RESERVED, SOLD, NOT_FOR_SALE
 
@@ -85,18 +79,15 @@ public class Unit {
     private LocalDateTime saleDate;
     private LocalDateTime deliveryDate;
 
-    // Pricing
     private BigDecimal listPrice;
     private BigDecimal salePrice;
     private String currency;  // AZN, USD, EUR
     private BigDecimal pricePerSquareMeter;
 
-    // Payment
     private BigDecimal totalPaid;
     private BigDecimal remainingPayment;
     private Integer paymentPercentage;  // Ödəniş faizi
 
-    // Quality & Inspection
     @ElementCollection
     @CollectionTable(name = "unit_inspections", joinColumns = @JoinColumn(name = "unit_id"))
     private List<InspectionRecord> inspections;
@@ -105,13 +96,11 @@ public class Unit {
     private Boolean hasDefects;
     private Integer defectCount;
 
-    // Features & Amenities
     @ElementCollection
     @CollectionTable(name = "unit_features", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "feature")
     private List<String> features;  // Smart Home, Central Heating, Security System, etc.
 
-    // Documents & Media
     @ElementCollection
     @CollectionTable(name = "unit_documents", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "document_id")
@@ -125,23 +114,21 @@ public class Unit {
     @ElementCollection
     @CollectionTable(name = "unit_videos", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "video_url")
-    private List<String> videoUrls;  // Video tours
+    private List<String> videoUrls;
 
-    private String virtualTourUrl;  // 360° tur
+    private String virtualTourUrl;
 
-    // GPS Coordinates (for map)
     private Double latitude;
     private Double longitude;
 
-    // Construction Work Tracking
     @OneToMany(mappedBy = "unitId", cascade = CascadeType.ALL)
-    private List<UnitWorkItem> workItems;  // İş qalemleri
+    private List<UnitWorkItem> workItems;
 
-    // Notifications
+
     private Boolean notifyOwnerOnProgress;
     private Boolean notifyOwnerOnCompletion;
 
-    // Additional Info
+
     @ElementCollection
     @CollectionTable(name = "unit_tags", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "tag")
@@ -152,7 +139,6 @@ public class Unit {
     private Boolean hasParkingSpace;
     private String parkingNumber;
 
-    // Timestamps
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -162,9 +148,7 @@ public class Unit {
 
     private LocalDateTime deletedAt;
 
-    // View tracking
     private Integer viewCount;
 
-    // Notes
     private String notes;
 }

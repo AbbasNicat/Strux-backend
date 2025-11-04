@@ -77,7 +77,6 @@ public class LocationController {
         try {
             MapBoundsRequest bounds = null;
 
-            // Tüm koordinatlar varsa bounds oluştur
             if (southWestLat != null && southWestLng != null &&
                     northEastLat != null && northEastLng != null) {
                 bounds = MapBoundsRequest.builder()

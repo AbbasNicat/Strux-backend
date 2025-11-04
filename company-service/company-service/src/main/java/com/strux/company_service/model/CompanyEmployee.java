@@ -26,7 +26,7 @@ public class CompanyEmployee {
     private String companyId;
 
     @Column(nullable = false)
-    private String userId; // User Service-dən user ID
+    private String userId;
 
     @Column(nullable = false)
     private String position;

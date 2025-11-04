@@ -38,7 +38,6 @@ public class DocumentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(document);
     }
 
-    // Option 2: Upload with form fields (Alternative - simpler for basic uploads)
     @PostMapping(value = "/upload-form", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentDto> uploadDocumentForm(
             @RequestPart("file") MultipartFile file,

@@ -31,12 +31,10 @@ public class UnitService {
     public UnitDto createUnit(UnitCreateRequest request) {
         log.info("Creating unit: {} for project: {}", request.getUnitNumber(), request.getProjectId());
 
-        // Check if unit number already exists in project
         if (unitRepository.existsByUnitNumberAndProjectIdAndDeletedAtIsNull(request.getUnitNumber(), request.getProjectId())) {
             throw new RuntimeException("Unit number already exists in this project");
         }
 
-        // Calculate price per square meter
         BigDecimal pricePerSqm = null;
         if (request.getListPrice() != null && request.getNetArea() != null && request.getNetArea().compareTo(BigDecimal.ZERO) > 0) {
             pricePerSqm = request.getListPrice().divide(request.getNetArea(), 2, RoundingMode.HALF_UP);
@@ -100,7 +98,6 @@ public class UnitService {
                 .filter(u -> u.getDeletedAt() == null)
                 .orElseThrow(() -> new RuntimeException("Unit not found"));
 
-        // Increment view count
         unit.setViewCount(unit.getViewCount() != null ? unit.getViewCount() + 1 : 1);
         unitRepository.save(unit);
 
@@ -230,7 +227,6 @@ public class UnitService {
         }
         if (request.getNetArea() != null) {
             unit.setNetArea(request.getNetArea());
-            // Recalculate price per sqm
             if (unit.getListPrice() != null && request.getNetArea().compareTo(BigDecimal.ZERO) > 0) {
                 unit.setPricePerSquareMeter(unit.getListPrice().divide(request.getNetArea(), 2, RoundingMode.HALF_UP));
             }
@@ -367,7 +363,6 @@ public class UnitService {
             unit.setCurrentPhase(request.getCurrentPhase());
         }
 
-        // Auto-complete if 100%
         if (request.getCompletionPercentage() == 100 && unit.getStatus() != UnitStatus.COMPLETED) {
             unit.setStatus(UnitStatus.COMPLETED);
             unit.setActualCompletionDate(LocalDateTime.now());
@@ -377,7 +372,6 @@ public class UnitService {
 
         publishUnitProgressUpdatedEvent(unit, oldPercentage);
 
-        // Notify owner if enabled
         if (unit.getNotifyOwnerOnProgress() && unit.getOwnerId() != null) {
             publishOwnerNotificationEvent(unit, "progress");
         }
@@ -471,7 +465,6 @@ public class UnitService {
                 .orElseThrow(() -> new RuntimeException("Unit not found"));
 
         if (hardDelete) {
-            // Delete all work items first
             workItemRepository.deleteByUnitId(unitId);
             unitRepository.delete(unit);
         } else {
@@ -481,8 +474,6 @@ public class UnitService {
 
         publishUnitDeletedEvent(unit, hardDelete);
     }
-
-    // Work Item Management
 
     @Transactional
     public UnitWorkItemDto addWorkItem(String unitId, WorkItemCreateRequest request) {
@@ -559,7 +550,6 @@ public class UnitService {
 
         workItem = workItemRepository.save(workItem);
 
-        // Recalculate unit completion percentage
         recalculateUnitCompletion(workItem.getUnitId());
 
         publishWorkItemUpdatedEvent(workItem, oldPercentage);
@@ -575,7 +565,6 @@ public class UnitService {
         String unitId = workItem.getUnitId();
         workItemRepository.delete(workItem);
 
-        // Recalculate unit completion percentage
         recalculateUnitCompletion(unitId);
     }
 
@@ -614,7 +603,6 @@ public class UnitService {
         }
     }
 
-    // Statistics
 
     public UnitStatsResponse getUnitStats(String projectId) {
         Long totalUnits = unitRepository.countByProjectIdAndDeletedAtIsNull(projectId);
@@ -665,7 +653,6 @@ public class UnitService {
                 .build();
     }
 
-    // Helper methods
 
     private boolean matchesSearchCriteria(Unit unit, UnitSearchRequest request) {
         if (request.getKeyword() != null &&
@@ -862,7 +849,6 @@ public class UnitService {
                 .build();
     }
 
-    // Kafka event publishers
 
     private void publishUnitCreatedEvent(Unit unit) {
         Map<String, Object> event = new HashMap<>();

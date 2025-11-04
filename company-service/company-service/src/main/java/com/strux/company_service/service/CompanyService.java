@@ -59,11 +59,9 @@ public class CompanyService {
             company.setCreatedAt(LocalDateTime.now());
             company.setUpdatedAt(LocalDateTime.now());
 
-            // EntityManager ile persist kullan
             entityManager.persist(company);
             entityManager.flush();
 
-            // Kafka event'i gönder
             try {
                 companyEventProducer.publishCompanyCreated(company);
             } catch (Exception e) {

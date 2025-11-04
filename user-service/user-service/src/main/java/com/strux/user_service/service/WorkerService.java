@@ -36,8 +36,6 @@ public class WorkerService {
     private final UserMapper userMapper;
     private final AuditLogService auditLogService;
 
-
-
     @Transactional(readOnly = true)
     public Page<UserResponse> searchWorkers(
             WorkerSpecialty specialty,
@@ -418,7 +416,6 @@ public class WorkerService {
         if (currentRating == null || currentRating.compareTo(BigDecimal.ZERO) == 0) {
             updatedRating = newRating;
         } else {
-            // Weighted average: (current * (tasks-1) + new) / tasks
             BigDecimal totalScore = currentRating
                     .multiply(BigDecimal.valueOf(totalTasks - 1))
                     .add(newRating);
@@ -465,7 +462,7 @@ public class WorkerService {
 
             profile.setReliabilityScore(reliabilityScore);
         } else {
-            profile.setReliabilityScore(BigDecimal.valueOf(100)); // Yeni işçi için 100
+            profile.setReliabilityScore(BigDecimal.valueOf(100));
         }
     }
 

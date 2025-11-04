@@ -128,7 +128,6 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
 
-        // 2. Event publish et
         applicationEventPublisher.publishEvent(new UserCreatedEvent(
                 savedUser.getId().toString(),
                 request.getEmail(),

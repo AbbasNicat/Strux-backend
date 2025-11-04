@@ -578,7 +578,7 @@ public class ProjectService {
             Project project = projectRepository.findById(projectId)
                     .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
 
-            List<CreateProjectRequest.PhaseDefinition> allPhases = project.getPhases().stream()
+            /*List<CreateProjectRequest.PhaseDefinition> allPhases = project.getPhases().stream()
                     .map(phase -> {
                         CreateProjectRequest.PhaseDefinition def = new CreateProjectRequest.PhaseDefinition();
                         def.setWeightPercentage(phase.getWeightPercentage());
@@ -591,7 +591,7 @@ public class ProjectService {
             allPhases.add(newPhaseDef);
 
             validatPhaseWeights(allPhases);
-
+            */
             ProjectPhase phase = new ProjectPhase();
             phase.setProject(project);
             phase.setPhaseName(request.getPhaseName());

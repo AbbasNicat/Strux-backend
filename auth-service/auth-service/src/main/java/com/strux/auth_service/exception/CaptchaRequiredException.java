@@ -6,26 +6,22 @@ public class CaptchaRequiredException extends Exception {
     private long timestamp;
     private String requestId;
 
-    // Constructor 1: Sadece mesaj
     public CaptchaRequiredException(String message) {
         super(message);
         this.timestamp = System.currentTimeMillis();
     }
 
-    // Constructor 2: Mesaj ve cause
     public CaptchaRequiredException(String message, Throwable cause) {
         super(message, cause);
         this.timestamp = System.currentTimeMillis();
     }
 
-    // Constructor 3: Mesaj ve captcha token
     public CaptchaRequiredException(String message, String captchaToken) {
         super(message);
         this.captchaToken = captchaToken;
         this.timestamp = System.currentTimeMillis();
     }
 
-    // Constructor 4: Tam detay
     public CaptchaRequiredException(String message, String captchaToken, String requestId) {
         super(message);
         this.captchaToken = captchaToken;
@@ -33,7 +29,6 @@ public class CaptchaRequiredException extends Exception {
         this.timestamp = System.currentTimeMillis();
     }
 
-    // Getters
     public String getCaptchaToken() {
         return captchaToken;
     }

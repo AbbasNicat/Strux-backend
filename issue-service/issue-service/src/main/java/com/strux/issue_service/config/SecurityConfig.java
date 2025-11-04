@@ -13,97 +13,113 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                "http://localhost:5175"
+        ));
+
+        configuration.setAllowedMethods(Arrays.asList(
+                "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+        ));
+
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+
+        configuration.setAllowCredentials(true);
+
+        configuration.setExposedHeaders(Arrays.asList(
+                "Authorization",
+                "X-User-Id",
+                "X-Device-Fingerprint"
+        ));
+
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Health check endpoints
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/health/**").permitAll()
 
-                        // Create issue - Workers and Homeowners can report issues
                         .requestMatchers(HttpMethod.POST, "/api/issues")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get single issue - Everyone can view
                         .requestMatchers(HttpMethod.GET, "/api/issues/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues by company
                         .requestMatchers(HttpMethod.GET, "/api/issues/company/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues by user (reporter)
                         .requestMatchers(HttpMethod.GET, "/api/issues/user/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues assigned to user
                         .requestMatchers(HttpMethod.GET, "/api/issues/assigned/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Get issues by status
                         .requestMatchers(HttpMethod.GET, "/api/issues/company/*/status/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues by project
                         .requestMatchers(HttpMethod.GET, "/api/issues/project/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues by task
                         .requestMatchers(HttpMethod.GET, "/api/issues/task/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Get issues by asset
                         .requestMatchers(HttpMethod.GET, "/api/issues/asset/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Get overdue issues
                         .requestMatchers(HttpMethod.GET, "/api/issues/company/*/overdue")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Search issues
                         .requestMatchers(HttpMethod.POST, "/api/issues/search")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Update issue - Only admins and workers
                         .requestMatchers(HttpMethod.PUT, "/api/issues/*")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Assign issue - Only admins
                         .requestMatchers(HttpMethod.PUT, "/api/issues/*/assign")
                         .hasRole("COMPANY_ADMIN")
 
-                        // Resolve issue - Admins and workers
                         .requestMatchers(HttpMethod.PUT, "/api/issues/*/resolve")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Close issue - Admins and workers
                         .requestMatchers(HttpMethod.PUT, "/api/issues/*/close")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER")
 
-                        // Reopen issue - Everyone can reopen
                         .requestMatchers(HttpMethod.PUT, "/api/issues/*/reopen")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
-                        // Delete issue - Only admins
                         .requestMatchers(HttpMethod.DELETE, "/api/issues/*")
                         .hasRole("COMPANY_ADMIN")
 
-                        // Get issue statistics
                         .requestMatchers(HttpMethod.GET, "/api/issues/company/*/stats")
                         .hasAnyRole("COMPANY_ADMIN", "WORKER", "HOMEOWNER")
 
@@ -129,7 +145,6 @@ public class SecurityConfig {
         @Override
         public Collection<GrantedAuthority> convert(Jwt jwt) {
             Collection<GrantedAuthority> authorities = new ArrayList<>();
-
 
             Map<String, Object> realmAccess = jwt.getClaim("realm_access");
             if (realmAccess != null && realmAccess.containsKey("roles")) {

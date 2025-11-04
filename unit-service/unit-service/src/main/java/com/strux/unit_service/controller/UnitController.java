@@ -167,7 +167,6 @@ public class UnitController {
         return ResponseEntity.noContent().build();
     }
 
-    // Work Items endpoints
 
     @PostMapping("/{unitId}/work-items")
     public ResponseEntity<UnitWorkItemDto> addWorkItem(
@@ -199,7 +198,6 @@ public class UnitController {
         return ResponseEntity.noContent().build();
     }
 
-    // Statistics
 
     @GetMapping("/project/{projectId}/stats")
     public ResponseEntity<UnitStatsResponse> getUnitStats(@PathVariable String projectId) {

@@ -22,8 +22,6 @@ public class Document {
     @Id
     private String id;
 
-    // ==================== BASIC FILE INFO ====================
-
     @Indexed
     private String fileName;
 
@@ -40,8 +38,6 @@ public class Document {
 
     private String fileExtension;
 
-    // ==================== DOCUMENT METADATA ====================
-
     @Indexed
     private DocumentType documentType;
 
@@ -52,7 +48,6 @@ public class Document {
 
     private Set<String> tags;
 
-    // ==================== ENTITY RELATIONSHIP ====================
 
     @Indexed
     private EntityType entityType;
@@ -60,15 +55,12 @@ public class Document {
     @Indexed
     private String entityId;
 
-    // ==================== USER & COMPANY INFO ====================
-
     @Indexed
     private String uploadedBy;
 
     @Indexed
     private String companyId;
 
-    // ==================== TIMESTAMPS ====================
 
     @CreatedDate
     private LocalDateTime uploadedAt;
@@ -80,7 +72,6 @@ public class Document {
 
     private LocalDateTime archivedAt;
 
-    // ==================== STATUS & PERMISSIONS ====================
 
     private Boolean isPublic;
 
@@ -89,7 +80,6 @@ public class Document {
     @Indexed
     private DocumentStatus status;
 
-    // ==================== STRUX-SPECIFIC FIELDS ====================
 
     @Indexed
     private String taskId;

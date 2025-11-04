@@ -35,11 +35,6 @@ public interface DocumentRepository extends MongoRepository<Document, String> {
     })
     Long getTotalStorageByCompany(String companyId);
 
-    // ==================== STRUX-SPECIFIC METHODS ====================
-
-    /**
-     * Find documents by entity ID and type (without status filter)
-     */
     List<Document> findByEntityIdAndEntityType(String entityId, EntityType entityType);
 
     /**
@@ -96,14 +91,9 @@ public interface DocumentRepository extends MongoRepository<Document, String> {
             DocumentApprovalStatus approvalStatus
     );
 
-    /**
-     * Find documents by phase ID
-     */
+
     List<Document> findByPhaseId(String phaseId);
 
-    /**
-     * Count documents by task ID
-     */
     Long countByTaskId(String taskId);
 
     /**

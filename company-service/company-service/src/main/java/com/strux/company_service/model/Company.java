@@ -26,7 +26,7 @@ public class Company {
     private String taxId; // VOEN
 
     @Column(unique = true)
-    private String registrationNumber; // Qeydiyyat nömrəsi
+    private String registrationNumber; // Qeydiyyat nomresi
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -64,7 +64,7 @@ public class Company {
     @Embedded
     private CompanyLicense license;
 
-    private String ownerId; // User Service-dən owner ID
+    private String ownerId;
 
     private Boolean isVerified;
 

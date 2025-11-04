@@ -24,7 +24,6 @@ public class EnhancedDocumentController {
 
     private final EnhancedDocumentService documentService;
 
-    // === CONSTRUCTION PROGRESS ENDPOINTS ===
     @PostMapping(value = "/progress/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentDto> uploadProgressDocument(
             @RequestPart("file") MultipartFile file,
