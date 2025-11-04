@@ -90,3 +90,63 @@ npm start
 ## 📄 License
 
 © 2025 Strux Platform. All rights reserved.
+
+## 🔌 API Integration
+
+The frontend is now fully integrated with the backend microservices:
+
+### API Services
+
+All backend endpoints are accessible through service classes:
+- `authService` - Authentication (login, register, logout)
+- `userService` - User management
+- `workerService` - Worker operations
+- `projectService` - Project management
+- `taskService` - Task management
+- `unitService` - Unit/property management
+- `notificationService` - Notifications
+- `companyService` - Company operations
+
+### Configuration
+
+Set your API Gateway URL in `.env.local`:
+
+```env
+NEXT_PUBLIC_API_GATEWAY=http://localhost:8081
+```
+
+### Authentication
+
+The app uses JWT token-based authentication:
+- Tokens are stored in localStorage
+- AuthContext provides global auth state
+- Protected routes check authentication status
+- Automatic token refresh (when implemented on backend)
+
+### Usage
+
+```typescript
+import { authService } from '@/services/auth.service'
+import { projectService } from '@/services/project.service'
+
+// Login
+await authService.login({ email, password })
+
+// Get projects
+const projects = await projectService.getAllProjects()
+```
+
+## 🏗️ Backend Services
+
+The frontend connects to these microservices via API Gateway (Port 8081):
+
+1. **Auth Service** (9091) - `/api/auth/**`
+2. **User Service** (9093) - `/api/users/**`, `/api/workers/**`
+3. **Company Service** (9094) - `/api/companies/**`
+4. **Document Service** (9089) - `/api/documents/**`
+5. **Project Service** (9095) - `/api/projects/**`, `/api/locations/**`
+6. **Task Service** (9096) - `/api/tasks/**`
+7. **Notification Service** (9098) - `/api/notifications/**`
+8. **Unit Service** (9099) - `/api/units/**`
+
+All requests go through the API Gateway at `localhost:8081`.

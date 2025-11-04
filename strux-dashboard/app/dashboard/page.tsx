@@ -1,21 +1,70 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import Map from '@/components/Map'
 import { Building2, CheckCircle, Users, Home } from 'lucide-react'
+import { projectService } from '@/services/project.service'
+import { taskService } from '@/services/task.service'
+import { workerService } from '@/services/user.service'
+import { unitService } from '@/services/unit.service'
 
 export default function DashboardPage() {
-  const stats = [
-    { name: 'Active Projects', value: '12', icon: Building2, color: 'bg-blue-500' },
-    { name: 'Tasks', value: '48', icon: CheckCircle, color: 'bg-green-500' },
-    { name: 'Workers', value: '156', icon: Users, color: 'bg-purple-500' },
-    { name: 'Completed Units', value: '89', icon: Home, color: 'bg-orange-500' },
+  const [stats, setStats] = useState({
+    activeProjects: 0,
+    tasks: 0,
+    workers: 0,
+    completedUnits: 0,
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  const loadDashboardData = async () => {
+    try {
+      // For demo, using mock company ID - in production this would come from auth context
+      const companyId = localStorage.getItem('companyId') || 'demo-company-id'
+
+      const [projects, tasks, workers] = await Promise.all([
+        projectService.getAllProjects({ page: 0, size: 100 }).catch(() => ({ content: [] })),
+        taskService.getCompanyTasks(companyId).catch(() => []),
+        workerService.getCompanyWorkers(companyId).catch(() => []),
+      ])
+
+      setStats({
+        activeProjects: projects.content?.filter((p: any) => p.status === 'IN_PROGRESS').length || 0,
+        tasks: tasks.length || 0,
+        workers: workers.length || 0,
+        completedUnits: 0, // Will be calculated from all projects
+      })
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const statItems = [
+    { name: 'Active Projects', value: stats.activeProjects, icon: Building2, color: 'bg-blue-500' },
+    { name: 'Tasks', value: stats.tasks, icon: CheckCircle, color: 'bg-green-500' },
+    { name: 'Workers', value: stats.workers, icon: Users, color: 'bg-purple-500' },
+    { name: 'Completed Units', value: stats.completedUnits, icon: Home, color: 'bg-orange-500' },
   ]
 
-  const recentActivity = [
-    { id: 1, action: 'New project created', project: 'Shusha Reconstruction', time: '2 hours ago' },
-    { id: 2, action: 'Task completed', project: 'Baku Development', time: '4 hours ago' },
-    { id: 3, action: 'Worker assigned', project: 'Khirdalan Phase 2', time: '6 hours ago' },
-    { id: 4, action: 'Unit inspection passed', project: 'Ganja Heights', time: '8 hours ago' },
-  ]
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
@@ -25,9 +74,8 @@ export default function DashboardPage() {
           <p className="text-gray-600 mt-1">Overview of your construction projects</p>
         </div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat) => {
+          {statItems.map((stat) => {
             const Icon = stat.icon
             return (
               <div key={stat.name} className="card">
@@ -45,26 +93,12 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* Recent Activity and Map */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent Activity */}
           <div className="card">
             <h2 className="text-xl font-bold mb-4">Recent Activity</h2>
-            <div className="space-y-4">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-start space-x-3 pb-4 border-b border-gray-200 last:border-0">
-                  <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-dark">{activity.action}</p>
-                    <p className="text-sm text-gray-600">{activity.project}</p>
-                    <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-gray-500">No recent activity</p>
           </div>
 
-          {/* Map Preview */}
           <div className="card">
             <h2 className="text-xl font-bold mb-4">Project Locations</h2>
             <Map />

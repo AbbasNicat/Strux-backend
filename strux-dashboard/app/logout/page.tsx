@@ -1,7 +1,18 @@
+'use client'
+
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { Building2, CheckCircle } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function LogoutPage() {
+  const { logout } = useAuth()
+
+  useEffect(() => {
+    // Auto logout when this page is visited
+    logout()
+  }, [])
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-light">
       <div className="card max-w-md w-full mx-4 text-center">
