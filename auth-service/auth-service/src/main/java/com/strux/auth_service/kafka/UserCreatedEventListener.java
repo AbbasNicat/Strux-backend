@@ -2,6 +2,7 @@ package com.strux.auth_service.kafka;
 
 import com.strux.auth_service.client.UserServiceClient;
 import com.strux.auth_service.dto.UpdateKeycloakIdRequest;
+import com.strux.auth_service.dto.UserRole;
 import com.strux.auth_service.event.UserCreatedEvent;
 import com.strux.auth_service.service.KeycloakAdminService;
 import lombok.RequiredArgsConstructor;
@@ -24,12 +25,14 @@ public class UserCreatedEventListener {
         try {
             log.info("Processing user creation event for: {}", event.getEmail());
 
+            UserRole role = safeRole(event.getRole());
+
             String keycloakId = keycloakService.createUser(
                     event.getEmail(),
                     event.getPassword(),
                     event.getFirstName(),
                     event.getLastName(),
-                    event.getRole()
+                    role
             );
 
             UpdateKeycloakIdRequest request = new UpdateKeycloakIdRequest();
@@ -42,6 +45,16 @@ public class UserCreatedEventListener {
 
         } catch (Exception e) {
             log.error("Failed to process user creation event for: {}", event.getEmail(), e);
+        }
+    }
+
+    private UserRole safeRole(String raw) {
+        if (raw == null || raw.isBlank()) return UserRole.USER;
+        try {
+            return UserRole.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            log.warn("Unknown role '{}', defaulting to USER", raw);
+            return UserRole.USER;
         }
     }
 }

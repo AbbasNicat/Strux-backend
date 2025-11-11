@@ -20,5 +20,6 @@ public enum WorkerSpecialty {
     ENGINEER,
     SURVEYOR,
     GENERAL_LABORER,
+    GENERAL,
     OTHER;
 }

@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -33,6 +34,13 @@ public class UserController {
         UserResponse response = userService.getUserById(userId);
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/users")
+    public ResponseEntity<List<UserResponse>> getUsersByIds(@RequestParam List<String> ids) {
+        List<UserResponse> users = userService.getUsersByIds(ids);
+        return ResponseEntity.ok(users);
+    }
+
 
     @PostMapping("/{userId}/worker-profile")
     public ResponseEntity<UserResponse> completeWorkerProfile(

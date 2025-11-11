@@ -1,4 +1,3 @@
-
 package com.strux.project_service.config;
 
 import org.springframework.context.annotation.Bean;
@@ -29,7 +28,6 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:5173",
                 "http://localhost:5174",
@@ -42,7 +40,6 @@ public class SecurityConfig {
         ));
 
         configuration.setAllowedHeaders(Arrays.asList("*"));
-
         configuration.setAllowCredentials(true);
 
         configuration.setExposedHeaders(Arrays.asList(
@@ -59,13 +56,11 @@ public class SecurityConfig {
         return source;
     }
 
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
@@ -77,36 +72,67 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/health/**").permitAll()
 
-                        // Location endpoints (read-only)
-                        .requestMatchers(HttpMethod.GET, "/api/locations/markers").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/locations/nearby").permitAll()
+                        // Location search - Google Maps API (authentication gerekmez)
                         .requestMatchers(HttpMethod.GET, "/api/locations/search").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/locations/details/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/locations/projects/*/map-details").permitAll()
 
-                        // Project endpoints (read-only)
-                        .requestMatchers(HttpMethod.GET, "/api/projects").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/projects/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/projects/*/progress").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/projects/map").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/projects/company/*").permitAll()
+                        // ============================================
+                        // AUTHENTICATED - Tüm Kullanıcılar (Company Bazlı Filtreleme)
+                        // ============================================
+
+                        // Location endpoints - Artık authentication gerekli (company bazlı)
+                        .requestMatchers(HttpMethod.GET, "/api/locations/markers")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/locations/nearby")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/locations/projects/*/map-details")
+                        .authenticated()
+
+                        // Project endpoints - Read (company bazlı)
+                        .requestMatchers(HttpMethod.GET, "/api/projects")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/projects/*")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/projects/*/progress")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/projects/map")
+                        .authenticated()
+
+                        .requestMatchers(HttpMethod.GET, "/api/projects/company/*")
+                        .authenticated()
 
                         // ============================================
                         // COMPANY_ADMIN - Şirket Yöneticisi
                         // ============================================
 
                         // Project CRUD
-                        .requestMatchers(HttpMethod.POST, "/api/projects").hasRole("COMPANY_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/projects/*").hasRole("COMPANY_ADMIN")
-                        .requestMatchers(HttpMethod.PATCH, "/api/projects/*").hasRole("COMPANY_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/projects")
+                        .hasRole("COMPANY_ADMIN")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/projects/*")
+                        .hasRole("COMPANY_ADMIN")
+
+                        .requestMatchers(HttpMethod.PATCH, "/api/projects/*")
+                        .hasRole("COMPANY_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*")
+                        .hasRole("COMPANY_ADMIN")
 
                         // Location management
-                        .requestMatchers(HttpMethod.POST, "/api/locations/projects/*").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/locations/projects/*")
+                        .hasRole("COMPANY_ADMIN")
 
                         // Phase management
-                        .requestMatchers(HttpMethod.POST, "/api/projects/*/phases").hasRole("COMPANY_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*/phases/*").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/projects/*/phases")
+                        .hasRole("COMPANY_ADMIN")
+
+                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*/phases/*")
+                        .hasRole("COMPANY_ADMIN")
 
                         // ============================================
                         // WORKER & COMPANY_ADMIN - Progress Update
@@ -118,7 +144,7 @@ public class SecurityConfig {
                         // AUTHENTICATED - Filtering
                         // ============================================
                         .requestMatchers(HttpMethod.POST, "/api/locations/filter")
-                        .hasAnyRole("HOMEOWNER", "COMPANY_ADMIN", "WORKER")
+                        .authenticated()
 
                         // Diğer tüm istekler authentication gerektirir
                         .anyRequest().authenticated()
@@ -139,11 +165,6 @@ public class SecurityConfig {
         return converter;
     }
 
-    /**
-     * Keycloak'tan gelen JWT token'daki rolleri Spring Security formatına çevirir
-     * Keycloak: realm_access.roles = ["COMPANY_ADMIN"]
-     * Spring: authorities = ["ROLE_COMPANY_ADMIN"]
-     */
     static class KeycloakRoleConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
         @Override
         public Collection<GrantedAuthority> convert(Jwt jwt) {

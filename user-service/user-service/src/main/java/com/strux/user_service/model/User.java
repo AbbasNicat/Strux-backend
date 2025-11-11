@@ -39,7 +39,7 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private UserRole role = UserRole.USER; // Default role
+    private UserRole role = UserRole.USER;
 
     @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
@@ -47,7 +47,7 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private UserStatus status = UserStatus.ACTIVE; // Default status
+    private UserStatus status = UserStatus.ACTIVE;
 
     private String companyId;
 
@@ -68,6 +68,7 @@ public class User {
 
     @Column(name = "provider_id", length = 255)
     private String providerId;
+
     @Column(name = "city")
     private String city;
 
@@ -75,9 +76,9 @@ public class User {
     @Builder.Default
     private Boolean isAvailable = false;
 
-    @Embedded
-    @Builder.Default
-    private WorkerProfile workerProfile = new WorkerProfile(); // Default empty
+    // ✅ @Embedded KALDIR, @OneToOne EKLE
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private WorkerProfile workerProfile;
 
     @Column(nullable = false)
     @Builder.Default

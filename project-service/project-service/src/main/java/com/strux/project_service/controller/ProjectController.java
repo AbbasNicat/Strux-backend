@@ -37,7 +37,7 @@ public class ProjectController {
     @GetMapping("/{projectId}")
     public ResponseEntity<ProjectDetailResponse> getProjectDetail(@PathVariable String projectId) {
         log.info("Fetching project detail: {}", projectId);
-        ProjectDetailResponse response = projectService.getProjectDetailById(projectId);
+        ProjectDetailResponse response = projectService.getProjectDetailById(projectId, null);
         return ResponseEntity.ok(response);
     }
 
@@ -114,5 +114,12 @@ public class ProjectController {
         log.info("Fetching projects by company ID: {}", companyId);
         List<ProjectResponse> response = projectService.getProjectsByCompanyId(companyId);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{projectId}/company-id")
+    public ResponseEntity<String> getCompanyIdByProject(@PathVariable String projectId) {
+        log.info("Fetching companyId for project {}", projectId);
+        String companyId = projectService.getCompanyIdByProjectId(projectId);
+        return ResponseEntity.ok(companyId);
     }
 }

@@ -1,5 +1,6 @@
 package com.strux.company_service.service;
 
+import com.strux.company_service.dto.CompanyEmployeeResponse;
 import com.strux.company_service.dto.CompanyRequest;
 import com.strux.company_service.dto.CompanyResponse;
 import com.strux.company_service.dto.CompanyUpdateRequest;
@@ -12,6 +13,8 @@ import com.strux.company_service.exceptions.InvalidInputException;
 import com.strux.company_service.kafka.CompanyEventProducer;
 import com.strux.company_service.mapper.CompanyMapper;
 import com.strux.company_service.model.Company;
+import com.strux.company_service.model.CompanyEmployee;
+import com.strux.company_service.repository.CompanyEmployeeRepository;
 import com.strux.company_service.repository.CompanyRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -39,6 +42,7 @@ public class CompanyService {
     private final FileStorageService fileStorageService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final CompanyEventProducer companyEventProducer;
+    private final CompanyEmployeeRepository companyEmployeeRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -283,6 +287,28 @@ public class CompanyService {
         } catch (Exception e) {
             throw new CompanyServiceException("Failed to delete company", e);
         }
+    }
+
+
+    public List<CompanyEmployeeResponse> getCompanyEmployees(String companyId) {
+        if (companyId == null || companyId.isBlank()) {
+            throw new IllegalArgumentException("companyId is required");
+        }
+
+        List<CompanyEmployee> list = companyEmployeeRepository.findByCompanyId(companyId);
+
+        return list.stream()
+                .map(emp -> CompanyEmployeeResponse.builder()
+                        .userId(emp.getUserId())
+                        .companyId(emp.getCompanyId())
+                        .position(emp.getPosition())
+                        .department(emp.getDepartment())
+                        .role(emp.getRole() != null ? emp.getRole().name() : null)
+                        .hireDate(emp.getHireDate())
+                        .status(emp.getStatus() != null ? emp.getStatus().name() : null)
+                        .build()
+                )
+                .toList();
     }
 
     private void validateCompanyRequest(CompanyRequest request) {

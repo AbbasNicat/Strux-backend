@@ -5,6 +5,8 @@ import com.strux.user_service.enums.AuditEvent;
 import com.strux.user_service.enums.UserRole;
 import com.strux.user_service.enums.UserStatus;
 import com.strux.user_service.enums.WorkerSpecialty;
+import com.strux.user_service.event.WorkerAssignedToProjectEvent;
+import com.strux.user_service.event.WorkerRemovedFromCompanyEvent;
 import com.strux.user_service.exceptions.InvalidInputException;
 import com.strux.user_service.exceptions.UserNotFoundException;
 import com.strux.user_service.exceptions.UserServiceException;
@@ -14,16 +16,24 @@ import com.strux.user_service.model.WorkerProfile;
 import com.strux.user_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,6 +45,151 @@ public class WorkerService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final AuditLogService auditLogService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+
+
+    private final WebClient.Builder webClientBuilder;
+
+    @Transactional(readOnly = true)
+    public List<ProjectResponse> getWorkerProjects(String workerId) {
+        try {
+            log.info("Fetching projects for worker: {}", workerId);
+
+            User worker = userRepository.findById(workerId)
+                    .orElseThrow(() -> new UserNotFoundException(
+                            "Worker not found with ID: " + workerId));
+
+            validateWorker(worker);
+
+            WorkerProfile profile = worker.getWorkerProfile();
+            if (profile == null || profile.getActiveProjectIds() == null ||
+                    profile.getActiveProjectIds().isEmpty()) {
+                log.info("Worker has no active projects");
+                return List.of();
+            }
+
+            // ✅ FIX: SecurityContext'ten token al
+            String token = getAuthToken();
+
+            List<String> projectIds = profile.getActiveProjectIds();
+            List<ProjectResponse> projects = new ArrayList<>();
+
+            for (String projectId : projectIds) {
+                try {
+                    ProjectResponse project = webClientBuilder.build()
+                            .get()
+                            .uri("http://localhost:9095/api/projects/{projectId}", projectId)
+                            .header("Authorization", "Bearer " + token) // ✅ Token ekle
+                            .retrieve()
+                            .bodyToMono(ProjectResponse.class)
+                            .block();
+
+                    if (project != null) {
+                        projects.add(project);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to fetch project {}: {}", projectId, e.getMessage());
+                }
+            }
+
+            log.info("Found {} projects for worker {}", projects.size(), workerId);
+            return projects;
+
+        } catch (UserNotFoundException | InvalidInputException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error fetching worker projects: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to fetch worker projects", e);
+        }
+    }
+
+
+    @Transactional
+    public void removeEmployeeFromCompany(String companyId, String userId, String removedBy) {
+        try {
+            log.info("Removing employee {} from company {}", userId, companyId);
+
+            // 1. Verify user exists and belongs to this company
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+            if (user.getCompanyId() == null || !user.getCompanyId().equals(companyId)) {
+                throw new InvalidInputException("User does not belong to this company");
+            }
+
+            // 2. If user is a worker, remove from all projects
+            if (user.getRole() == UserRole.WORKER && user.getWorkerProfile() != null) {
+                WorkerProfile workerProfile = user.getWorkerProfile();
+
+                // Remove from all projects
+                if (workerProfile.getActiveProjectIds() != null && !workerProfile.getActiveProjectIds().isEmpty()) {
+                    log.info("Removing worker from {} projects", workerProfile.getActiveProjectIds().size());
+                    workerProfile.getActiveProjectIds().clear();
+                    workerProfile.setIsAvailable(true);
+                }
+            }
+
+            // 3. Remove company association
+            user.setCompanyId(null);
+            user.setUpdatedAt(LocalDateTime.now());
+
+            // 4. Save changes
+            userRepository.save(user);
+
+            // 5. Log audit event
+            auditLogService.logUserEvent(
+                    AuditEvent.USER_UPDATED,
+                    user.getId(),
+                    removedBy,
+                    "Employee removed from company: " + companyId
+            );
+
+            // 6. 🆕 Publish Kafka event
+            publishWorkerRemovedFromCompanyEvent(companyId, userId, removedBy);
+
+            log.info("✅ Successfully removed employee {} from company {}", userId, companyId);
+
+        } catch (UserNotFoundException | InvalidInputException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error removing employee from company: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to remove employee from company", e);
+        }
+    }
+
+    private void publishWorkerRemovedFromCompanyEvent(String companyId, String userId, String removedBy) {
+        try {
+            WorkerRemovedFromCompanyEvent event = WorkerRemovedFromCompanyEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .timestamp(java.time.OffsetDateTime.now().toString())
+                    .companyId(companyId)
+                    .userId(userId)
+                    .removedBy(removedBy)
+                    .reason("Removed from company")
+                    .build();
+
+            kafkaTemplate.send("worker.removed", event);
+            log.info("✅ Published worker.removed event: company={}, user={}", companyId, userId);
+
+        } catch (Exception e) {
+            log.warn("Failed to publish worker.removed event: {}", e.getMessage());
+
+        }
+    }
+
+    private String getAuthToken() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+                return jwt.getTokenValue();
+            }
+            log.warn("No JWT token found in SecurityContext");
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting auth token: {}", e.getMessage());
+            return null;
+        }
+    }
 
     @Transactional(readOnly = true)
     public Page<UserResponse> searchWorkers(
@@ -50,13 +205,14 @@ public class WorkerService {
 
             validateSearchParameters(minRating);
 
+            // Native query enum'ları String olarak bekliyor
             Page<User> workers = userRepository.searchWorkers(
-                    specialty,
+                    specialty != null ? specialty.name() : null,  // Enum'u String'e çevir
                     city,
                     isAvailable,
                     minRating != null ? minRating : BigDecimal.ZERO,
-                    UserRole.WORKER,
-                    UserStatus.ACTIVE,
+                    UserRole.WORKER.name(),    // Enum'u String'e çevir
+                    UserStatus.ACTIVE.name(),  // Enum'u String'e çevir
                     pageable
             );
 
@@ -247,13 +403,21 @@ public class WorkerService {
                 throw new InvalidInputException("Worker profile not found");
             }
 
+            // ✅ Aktive proje listesi yoksa başlat
             if (profile.getActiveProjectIds() == null) {
-                profile.setActiveProjectIds(List.of(projectId));
-            } else if (!profile.getActiveProjectIds().contains(projectId)) {
+                profile.setActiveProjectIds(new ArrayList<>());
+            }
+
+            // ✅ Zaten kayıtlı değilse ekle
+            if (!profile.getActiveProjectIds().contains(projectId)) {
                 profile.getActiveProjectIds().add(projectId);
             }
 
             worker.setIsAvailable(false);
+
+            // ✅ Company ID set et (projenin bağlı olduğu şirketi alıyoruz)
+            String companyId = getCompanyIdFromProject(projectId);
+            worker.setCompanyId(companyId);
 
             userRepository.save(worker);
 
@@ -264,7 +428,9 @@ public class WorkerService {
                     "Worker assigned to project: " + projectId
             );
 
-            log.info("Worker added to project successfully - WorkerId: {}, ProjectId: {}", workerId, projectId);
+            publishWorkerAssignedEvent(worker, projectId, updatedBy);
+
+            log.info("✅ Worker added to project successfully - WorkerId: {}, ProjectId: {}", workerId, projectId);
 
         } catch (UserNotFoundException | InvalidInputException e) {
             throw e;
@@ -273,6 +439,17 @@ public class WorkerService {
             throw new UserServiceException("Failed to add worker to project", e);
         }
     }
+
+    private String getCompanyIdFromProject(String projectId) {
+        return webClientBuilder.build()
+                .get()
+                .uri("http://localhost:9095/api/projects/{projectId}/company-id", projectId)
+                .header("Authorization", "Bearer " + getAuthToken())
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+    }
+
 
     @Transactional
     public void removeWorkerFromProject(UUID workerId, String projectId, String updatedBy) {
@@ -288,8 +465,10 @@ public class WorkerService {
             if (profile != null && profile.getActiveProjectIds() != null) {
                 profile.getActiveProjectIds().remove(projectId);
 
+                // ✅ Eğer çalışanın başka projesi yoksa tekrar available olsun
                 if (profile.getActiveProjectIds().isEmpty()) {
                     worker.setIsAvailable(true);
+                    worker.setCompanyId(null); // 👈 Şirketten ayrılıyor
                 }
             }
 
@@ -302,7 +481,7 @@ public class WorkerService {
                     "Worker removed from project: " + projectId
             );
 
-            log.info("Worker removed from project successfully - WorkerId: {}, ProjectId: {}", workerId, projectId);
+            log.info("✅ Worker removed from project successfully - WorkerId: {}, ProjectId: {}", workerId, projectId);
 
         } catch (UserNotFoundException | InvalidInputException e) {
             throw e;
@@ -312,6 +491,42 @@ public class WorkerService {
         }
     }
 
+    private void publishWorkerAssignedEvent(User worker, String projectId, String issuedBy) {
+        try {
+
+            String token = getAuthToken();
+            String companyId = webClientBuilder.build()
+                    .get()
+                    .uri("http://localhost:9095/api/projects/{projectId}/company-id", projectId)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (companyId == null) {
+                log.warn("Cannot publish worker.assigned event, companyId null for project {}", projectId);
+                return;
+            }
+
+            WorkerAssignedToProjectEvent evt = WorkerAssignedToProjectEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .timestamp(java.time.OffsetDateTime.now().toString())
+                    .companyId(companyId)   // ✅ artık null değil
+                    .projectId(projectId)
+                    .userId(worker.getId())
+                    .position("Worker")
+                    .department(null)
+                    .role("WORKER")
+                    .issuedBy(issuedBy)
+                    .build();
+
+            kafkaTemplate.send("worker.assigned", evt);
+            log.info("✅ Published worker.assigned event: worker={}, company={}", worker.getId(), companyId);
+
+        } catch (Exception e) {
+            log.warn("Failed to publish worker.assigned: {}", e.getMessage());
+        }
+    }
     @Transactional(readOnly = true)
     public List<UserResponse> getTopWorkersBySpecialty(WorkerSpecialty specialty, int limit) {
         try {

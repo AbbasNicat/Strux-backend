@@ -9,30 +9,65 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
-@Embeddable
+@Entity
+@Table(name = "worker_profiles")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class WorkerProfile {
 
+    @Id
+    @Column(name = "user_id")
+    private String userId;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id")
+    private User user;
+
     @Enumerated(EnumType.STRING)
+    @Column(name = "specialty")
     private WorkerSpecialty specialty;
 
+    @Column(name = "experience_years")
     private Integer experienceYears;
+
+    @Column(name = "hourly_rate")
     private BigDecimal hourlyRate;
+
+    @Column(name = "rating")
     private BigDecimal rating;
+
+    @Column(name = "completed_tasks")
     private Integer completedTasks;
+
+    @Column(name = "total_work_days")
     private Integer totalWorkDays;
+
+    @Column(name = "on_time_completion_count")
     private Integer onTimeCompletionCount;
+
+    @Column(name = "late_completion_count")
     private Integer lateCompletionCount;
+
+    @Column(name = "reliability_score")
     private BigDecimal reliabilityScore;
-    @ElementCollection
-    private List<String> activeProjectIds;
-    @Column(nullable = false, name = "worker_is_available")
+
+    @Column(name = "is_available", nullable = false)
     @Builder.Default
-    private Boolean isAvailable = false;
+    private Boolean isAvailable = true;
+
+    @Column(name = "available_from")
     private LocalDate availableFrom;
+
+    @ElementCollection
+    @CollectionTable(name = "user_active_project_ids",
+            joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "active_project_ids")
+    @Builder.Default
+    private List<String> activeProjectIds = new ArrayList<>();
 }

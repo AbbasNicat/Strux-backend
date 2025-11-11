@@ -1,5 +1,6 @@
 package com.strux.company_service.controller;
 
+import com.strux.company_service.dto.CompanyEmployeeResponse;
 import com.strux.company_service.dto.CompanyRequest;
 import com.strux.company_service.dto.CompanyResponse;
 import com.strux.company_service.dto.CompanyUpdateRequest;
@@ -28,6 +29,14 @@ import java.util.List;
 public class CompanyController {
 
     private final CompanyService companyService;
+
+    @GetMapping("/{companyId}/employees")
+    public ResponseEntity<List<CompanyEmployeeResponse>> getCompanyEmployees(
+            @PathVariable String companyId) {
+        log.debug("Fetching employees for company {}", companyId);
+        List<CompanyEmployeeResponse> employees = companyService.getCompanyEmployees(companyId);
+        return ResponseEntity.ok(employees);
+    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -66,6 +75,8 @@ public class CompanyController {
         CompanyResponse response = companyService.getCompanyByTaxId(taxId);
         return ResponseEntity.ok(response);
     }
+
+
 
     @GetMapping
     public ResponseEntity<Page<CompanyResponse>> getAllCompanies(

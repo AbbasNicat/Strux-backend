@@ -31,6 +31,7 @@ public class UserResponse {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime verifiedAt;
     private String city;
+    private String message;
 
     private WorkerProfileResponse  workerProfile;
 

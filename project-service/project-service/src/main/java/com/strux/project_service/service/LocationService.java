@@ -6,6 +6,7 @@ import com.google.maps.model.*;
 import com.strux.project_service.dto.*;
 import com.strux.project_service.model.Project;
 import com.strux.project_service.repository.ProjectRepository;
+import com.strux.project_service.config.SecurityUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ public class LocationService {
     private final ProjectRepository projectRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final SecurityUtils securityUtils; // ✅ EKLENDI
 
     private final Map<String, CompletableFuture<Object>> pendingRequests = new ConcurrentHashMap<>();
 
@@ -56,6 +58,10 @@ public class LocationService {
     private static final String TOPIC_LOCATION_CREATED = "location.created";
     private static final String TOPIC_LOCATION_ASSIGNED = "location.assigned";
     private static final String TOPIC_LOCATION_UPDATED = "location.updated";
+
+    // ============================================
+    // GOOGLE MAPS API METHODS (Company'den bağımsız)
+    // ============================================
 
     public List<LocationSuggestionDTO> searchLocation(String query) {
         try {
@@ -117,7 +123,6 @@ public class LocationService {
         }
     }
 
-    // ✅ YENİ PLACES API (New) - Place Details
     public LocationDetailDTO getLocationDetails(String placeId) {
         try {
             String url = "https://places.googleapis.com/v1/places/" + placeId;
@@ -163,45 +168,18 @@ public class LocationService {
         }
     }
 
-    private String extractComponentFromNew(List<Map<String, Object>> components, String type) {
-        if (components == null) return null;
-
-        return components.stream()
-                .filter(comp -> {
-                    List<String> types = (List<String>) comp.get("types");
-                    return types != null && types.contains(type);
-                })
-                .map(comp -> (String) comp.get("longText"))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private String extractCityFromComponents(List<Map<String, Object>> components) {
-        return components.stream()
-                .filter(comp -> {
-                    List<String> types = (List<String>) comp.get("types");
-                    return types.contains("locality");
-                })
-                .map(comp -> (String) comp.get("long_name"))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private String extractCountryFromComponents(List<Map<String, Object>> components) {
-        return components.stream()
-                .filter(comp -> {
-                    List<String> types = (List<String>) comp.get("types");
-                    return types.contains("country");
-                })
-                .map(comp -> (String) comp.get("long_name"))
-                .findFirst()
-                .orElse(null);
-    }
+    // ============================================
+    // PROJECT LOCATION METHODS (Company bazlı güvenlik)
+    // ============================================
 
     @Transactional
     public Project saveProjectLocation(String projectId, CreateLocationRequest request) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new RuntimeException("Proje bulunamadı"));
+        // ✅ GÜVENLİK: Company kontrolü
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        log.info("Saving location for project: {} (company: {})", projectId, companyId);
+
+        Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                .orElseThrow(() -> new RuntimeException("Project not found or access denied"));
 
         boolean isNewLocation = project.getLocation() == null;
         boolean isUpdate = !isNewLocation;
@@ -236,18 +214,28 @@ public class LocationService {
         return savedProject;
     }
 
+    /**
+     * ✅ GÜNCELLEME: Company bazlı filtreleme
+     */
+    @Transactional(readOnly = true)
     public List<ProjectMarkerDTO> getAllProjectMarkers(MapBoundsRequest bounds) {
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        log.info("Fetching markers for company: {}", companyId);
+
         List<Project> projects;
 
-        if (bounds != null) {
-            projects = projectRepository.findByLocationBounds(
+        if (bounds != null && bounds.getSouthWestLat() != null) {
+            projects = projectRepository.findByCompanyIdAndLocationWithinBounds(
+                    companyId,
                     bounds.getSouthWestLat(),
                     bounds.getSouthWestLng(),
                     bounds.getNorthEastLat(),
                     bounds.getNorthEastLng()
             );
+            log.info("Found {} projects within bounds for company {}", projects.size(), companyId);
         } else {
-            projects = projectRepository.findAll();
+            projects = projectRepository.findByCompanyIdWithLocation(companyId);
+            log.info("Found {} projects with location for company {}", projects.size(), companyId);
         }
 
         return projects.stream()
@@ -256,9 +244,16 @@ public class LocationService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * ✅ GÜNCELLEME: Company bazlı güvenlik kontrolü
+     */
+    @Transactional(readOnly = true)
     public CompletableFuture<ProjectMapResponse> getProjectMapDetails(String projectId) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new RuntimeException("Proje bulunamadı"));
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        log.info("Fetching map details for project: {} (company: {})", projectId, companyId);
+
+        Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                .orElseThrow(() -> new RuntimeException("Project not found or access denied"));
 
         if (project.getLocation() == null) {
             throw new RuntimeException("Proje konumu bulunamadı");
@@ -297,6 +292,63 @@ public class LocationService {
         });
     }
 
+    /**
+     * ✅ GÜNCELLEME: Company bazlı filtreleme
+     */
+    @Transactional(readOnly = true)
+    public List<ProjectMarkerDTO> getNearbyProjects(Double latitude, Double longitude, Double radiusKm) {
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        log.info("Fetching nearby projects for company: {} within {}km of ({}, {})",
+                companyId, radiusKm, latitude, longitude);
+
+        List<Project> nearbyProjects = projectRepository.findNearbyProjectsByCompany(
+                companyId, latitude, longitude, radiusKm);
+
+        log.info("Found {} nearby projects", nearbyProjects.size());
+
+        return nearbyProjects.stream()
+                .filter(p -> p.getLocation() != null)
+                .map(this::convertToMarker)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * ✅ GÜNCELLEME: Company bazlı filtreleme
+     */
+    @Transactional(readOnly = true)
+    public List<ProjectMarkerDTO> getFilteredProjects(ProjectMapFilterRequest filter) {
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        log.info("Fetching filtered projects for company: {}", companyId);
+
+        // Güvenlik kontrolü: Kullanıcı sadece kendi company'sini görebilir
+        if (filter.getCompanyIds() != null && !filter.getCompanyIds().isEmpty()) {
+            if (!filter.getCompanyIds().contains(companyId)) {
+                log.warn("User tried to access projects from other companies. User company: {}, Requested: {}",
+                        companyId, filter.getCompanyIds());
+                throw new SecurityException("Cannot access projects from other companies");
+            }
+        }
+
+        List<Project> projects = projectRepository.findByCompanyIdAndFilters(
+                companyId,
+                filter.getStatuses(),
+                filter.getTypes(),
+                filter.getMinCompletion(),
+                filter.getMaxCompletion()
+        );
+
+        log.info("Found {} filtered projects for company {}", projects.size(), companyId);
+
+        return projects.stream()
+                .filter(p -> p.getLocation() != null)
+                .map(this::convertToMarker)
+                .collect(Collectors.toList());
+    }
+
+    // ============================================
+    // HELPER METHODS
+    // ============================================
+
     private ProjectBasicInfoDTO createBasicInfo(Project project) {
         LocalDateTime plannedEnd = project.getPlannedEndDate() != null ?
                 project.getPlannedEndDate().atStartOfDay() : null;
@@ -311,7 +363,7 @@ public class LocationService {
                 .status(project.getStatus().name())
                 .startDate(project.getStartDate() != null ? project.getStartDate().atStartOfDay() : null)
                 .endDate(project.getPlannedEndDate() != null ? project.getPlannedEndDate().atStartOfDay() : null)
-                .estimatedEndDate(project.getEstimatedEndDate() != null ? project.getEstimatedEndDate().atStartOfDay() : null) // ⬅️ EKLE
+                .estimatedEndDate(project.getEstimatedEndDate() != null ? project.getEstimatedEndDate().atStartOfDay() : null)
                 .actualEndDate(project.getActualEndDate() != null ? project.getActualEndDate().atStartOfDay() : null)
                 .totalBudget(project.getTotalBudget())
                 .spentBudget(project.getSpentBudget())
@@ -319,30 +371,64 @@ public class LocationService {
                 .build();
     }
 
-    public List<ProjectMarkerDTO> getNearbyProjects(Double latitude, Double longitude, Double radiusKm) {
-        List<Project> nearbyProjects = projectRepository
-                .findNearbyProjects(latitude, longitude, radiusKm);
+    private ProjectMarkerDTO convertToMarker(Project project) {
+        Project.ProjectLocation loc = project.getLocation();
 
-        return nearbyProjects.stream()
-                .filter(p -> p.getLocation() != null)
-                .map(this::convertToMarker)
-                .collect(Collectors.toList());
+        return ProjectMarkerDTO.builder()
+                .projectId(project.getId())
+                .projectName(project.getName())
+                .latitude(loc.getLatitude())
+                .longitude(loc.getLongitude())
+                .status(project.getStatus().name())
+                .type(project.getType().name())
+                .completionPercentage(project.getOverallProgress() != null ?
+                        project.getOverallProgress().intValue() : 0)
+                .companyName("")
+                .address(loc.getAddress())
+                .build();
     }
 
-    public List<ProjectMarkerDTO> getFilteredProjects(ProjectMapFilterRequest filter) {
-        List<Project> projects = projectRepository.findByFilters(
-                filter.getStatuses(),
-                filter.getTypes(),
-                filter.getCompanyIds(),
-                filter.getMinCompletion(),
-                filter.getMaxCompletion()
-        );
+    private String extractComponentFromNew(List<Map<String, Object>> components, String type) {
+        if (components == null) return null;
 
-        return projects.stream()
-                .filter(p -> p.getLocation() != null)
-                .map(this::convertToMarker)
-                .collect(Collectors.toList());
+        return components.stream()
+                .filter(comp -> {
+                    List<String> types = (List<String>) comp.get("types");
+                    return types != null && types.contains(type);
+                })
+                .map(comp -> (String) comp.get("longText"))
+                .findFirst()
+                .orElse(null);
     }
+
+    private String getStatusColor(com.strux.project_service.enums.ProjectStatus status) {
+        switch (status) {
+            case COMPLETED: return "#4CAF50";
+            case IN_PROGRESS: return "#2196F3";
+            case PLANNING: return "#FF9800";
+            case ON_HOLD: return "#FFC107";
+            case CANCELLED: return "#F44336";
+            default: return "#808080";
+        }
+    }
+
+    private Project.ProjectLocation copyLocation(Project.ProjectLocation location) {
+        if (location == null) return null;
+
+        Project.ProjectLocation copy = new Project.ProjectLocation();
+        copy.setPlaceId(location.getPlaceId());
+        copy.setAddress(location.getAddress());
+        copy.setLatitude(location.getLatitude());
+        copy.setLongitude(location.getLongitude());
+        copy.setCity(location.getCity());
+        copy.setCountry(location.getCountry());
+
+        return copy;
+    }
+
+    // ============================================
+    // EVENT PUBLISHING METHODS
+    // ============================================
 
     private void publishLocationCreatedEvent(LocationDetailDTO location) {
         Map<String, Object> event = new HashMap<>();
@@ -410,7 +496,6 @@ public class LocationService {
         event.put("newLocation", newData);
 
         Map<String, Boolean> changes = new HashMap<>();
-
         boolean coordinatesChanged = false;
         if (oldLocation != null) {
             coordinatesChanged = !Objects.equals(oldLocation.getLatitude(), newLocation.getLatitude()) ||
@@ -438,6 +523,10 @@ public class LocationService {
         log.info("Location updated event published for project: {}", project.getId());
     }
 
+    // ============================================
+    // KAFKA LISTENERS (Değişiklik yok)
+    // ============================================
+
     private CompletableFuture<CompanyInfoDTO> requestCompanyInfo(String companyId) {
         String correlationId = UUID.randomUUID().toString();
         CompletableFuture<Object> future = new CompletableFuture<>();
@@ -458,86 +547,6 @@ public class LocationService {
                             .build();
                 });
     }
-
-    private CompletableFuture<CurrentPhaseDTO> requestCurrentPhase(String projectId) {
-        String correlationId = UUID.randomUUID().toString();
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingRequests.put(correlationId, future);
-
-        Map<String, Object> request = new HashMap<>();
-        request.put("projectId", projectId);
-        request.put("correlationId", correlationId);
-        request.put("currentOnly", true);
-
-        kafkaTemplate.send(TOPIC_PHASE_REQUEST, request);
-
-        return future.thenApply(obj -> (CurrentPhaseDTO) obj)
-                .orTimeout(5, TimeUnit.SECONDS)
-                .exceptionally(ex -> {
-                    log.error("Current phase request timeout", ex);
-                    return null;
-                });
-    }
-
-    private CompletableFuture<List<PhaseProgressDTO>> requestAllPhases(String projectId) {
-        String correlationId = UUID.randomUUID().toString();
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingRequests.put(correlationId, future);
-
-        Map<String, Object> request = new HashMap<>();
-        request.put("projectId", projectId);
-        request.put("correlationId", correlationId);
-        request.put("currentOnly", false);
-
-        kafkaTemplate.send(TOPIC_PHASE_REQUEST, request);
-
-        return future.thenApply(obj -> (List<PhaseProgressDTO>) obj)
-                .orTimeout(5, TimeUnit.SECONDS)
-                .exceptionally(ex -> {
-                    log.error("All phases request timeout", ex);
-                    return new ArrayList<>();
-                });
-    }
-
-    private CompletableFuture<List<WorkerInfoDTO>> requestActiveWorkers(String projectId) {
-        String correlationId = UUID.randomUUID().toString();
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingRequests.put(correlationId, future);
-
-        Map<String, String> request = new HashMap<>();
-        request.put("projectId", projectId);
-        request.put("correlationId", correlationId);
-
-        kafkaTemplate.send(TOPIC_WORKER_REQUEST, request);
-
-        return future.thenApply(obj -> (List<WorkerInfoDTO>) obj)
-                .orTimeout(5, TimeUnit.SECONDS)
-                .exceptionally(ex -> {
-                    log.error("Workers request timeout", ex);
-                    return new ArrayList<>();
-                });
-    }
-
-    private CompletableFuture<List<ProjectMediaDTO>> requestRecentMedia(String projectId, int limit) {
-        String correlationId = UUID.randomUUID().toString();
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingRequests.put(correlationId, future);
-
-        Map<String, Object> request = new HashMap<>();
-        request.put("projectId", projectId);
-        request.put("limit", limit);
-        request.put("correlationId", correlationId);
-
-        kafkaTemplate.send(TOPIC_MEDIA_REQUEST, request);
-
-        return future.thenApply(obj -> (List<ProjectMediaDTO>) obj)
-                .orTimeout(5, TimeUnit.SECONDS)
-                .exceptionally(ex -> {
-                    log.error("Media request timeout", ex);
-                    return new ArrayList<>();
-                });
-    }
-
 
     @KafkaListener(topics = TOPIC_COMPANY_RESPONSE, groupId = "project-service")
     public void handleCompanyResponse(Map<String, Object> response) {
@@ -577,119 +586,11 @@ public class LocationService {
 
     @KafkaListener(topics = TOPIC_MEDIA_RESPONSE, groupId = "project-service")
     public void handleMediaResponse(Map<String, Object> response) {
-
         String correlationId = (String) response.get("correlationId");
         CompletableFuture<Object> future = pendingRequests.remove(correlationId);
         if (future != null) {
             List<ProjectMediaDTO> media = (List<ProjectMediaDTO>) response.get("media");
             future.complete(media);
         }
-    }
-
-    private ProjectMarkerDTO convertToMarker(Project project) {
-
-        Project.ProjectLocation loc = project.getLocation();
-
-        return ProjectMarkerDTO.builder()
-                .projectId(project.getId())
-                .projectName(project.getName())
-                .latitude(loc.getLatitude())
-                .longitude(loc.getLongitude())
-                .status(project.getStatus().name())
-                .type(project.getType().name())
-                .completionPercentage(project.getOverallProgress() != null ?
-                        project.getOverallProgress().intValue() : 0)
-                .companyName("")
-                .address(loc.getAddress())
-                .build();
-    }
-
-    private ProjectProgressResponse calculateStatistics(
-
-            Project project,
-            List<WorkerInfoDTO> workers) {
-
-        return ProjectProgressResponse.builder()
-                .projectId(project.getId())
-                .projectName(project.getName())
-                .overallProgress(project.getOverallProgress())
-                .startDate(project.getStartDate())
-                .plannedEndDate(project.getPlannedEndDate())
-                .estimatedEndDate(calculateEstimatedEndDate(project))
-                .totalPhases(0)
-                .completedPhases(0)
-                .inProgressPhases(0)
-                .phaseProgresses(new ArrayList<>())
-                .build();
-    }
-
-    private LocalDate calculateEstimatedEndDate(Project project) {
-        if (project.getPlannedEndDate() == null) return null;
-        if (project.getOverallProgress() == null || project.getOverallProgress().compareTo(BigDecimal.ZERO) == 0) {
-            return project.getPlannedEndDate();
-        }
-
-        long totalDays = java.time.temporal.ChronoUnit.DAYS.between(
-                project.getStartDate(), project.getPlannedEndDate());
-        long elapsedDays = calculateDaysElapsed(project.getStartDate());
-
-        double progressPercent = project.getOverallProgress().doubleValue();
-        if (progressPercent > 0) {
-            long estimatedTotalDays = (long) (elapsedDays / progressPercent * 100);
-            return project.getStartDate().plusDays(estimatedTotalDays);
-        }
-
-        return project.getPlannedEndDate();
-    }
-
-    private String extractAddressComponent(GeocodingResult result, String type) {
-
-        for (AddressComponent component : result.addressComponents) {
-            for (AddressComponentType componentType : component.types) {
-                if (componentType.name().equalsIgnoreCase(type)) {
-                    return component.longName;
-                }
-            }
-        }
-        return null;
-    }
-
-    private int calculateDaysElapsed(java.time.LocalDate startDate) {
-
-        if (startDate == null) return 0;
-        return (int) java.time.temporal.ChronoUnit.DAYS.between(
-                startDate, java.time.LocalDate.now());
-    }
-
-    private int calculateDaysRemaining(java.time.LocalDate endDate) {
-
-        if (endDate == null) return 0;
-        return (int) java.time.temporal.ChronoUnit.DAYS.between(
-                java.time.LocalDate.now(), endDate);
-    }
-
-    private String getStatusColor(com.strux.project_service.enums.ProjectStatus status) {
-        switch (status) {
-            case COMPLETED: return "#4CAF50";
-            case IN_PROGRESS: return "#2196F3";
-            case PLANNING: return "#FF9800";
-            case ON_HOLD: return "#FFC107";
-            case CANCELLED: return "#F44336";
-            default: return "#808080";
-        }
-    }
-
-    private Project.ProjectLocation copyLocation(Project.ProjectLocation location) {
-        if (location == null) return null;
-
-        Project.ProjectLocation copy = new Project.ProjectLocation();
-        copy.setPlaceId(location.getPlaceId());
-        copy.setAddress(location.getAddress());
-        copy.setLatitude(location.getLatitude());
-        copy.setLongitude(location.getLongitude());
-        copy.setCity(location.getCity());
-        copy.setCountry(location.getCountry());
-
-        return copy;
     }
 }

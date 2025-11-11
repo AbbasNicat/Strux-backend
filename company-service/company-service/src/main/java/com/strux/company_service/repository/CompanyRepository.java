@@ -1,7 +1,9 @@
 package com.strux.company_service.repository;
 
 import com.strux.company_service.model.Company;
+import jakarta.transaction.Transactional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Repository;
 
 import com.strux.company_service.enums.CompanyStatus;
@@ -19,6 +21,8 @@ import java.util.Optional;
 
 @Repository
 public interface CompanyRepository extends JpaRepository<Company, String> {
+
+
 
     Optional<Company> findByIdAndDeletedAtIsNull(String id);
 

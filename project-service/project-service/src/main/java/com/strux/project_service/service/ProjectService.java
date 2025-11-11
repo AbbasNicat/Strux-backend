@@ -1,5 +1,6 @@
 package com.strux.project_service.service;
 
+import com.strux.project_service.config.SecurityUtils;
 import com.strux.project_service.dto.*;
 import com.strux.project_service.enums.PhaseStatus;
 import com.strux.project_service.enums.ProjectStatus;
@@ -16,6 +17,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.lang.reflect.Field;
@@ -38,17 +40,19 @@ public class ProjectService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ProjectMapper projectMapper;
     private final ProjectPhaseRepository projectPhaseRepository;
+    private final SecurityUtils securityUtils; // Constructor'a eklenecek
 
     @Transactional
     public ProjectResponse createProject(CreateProjectRequest request) {
         try {
+            String companyId = securityUtils.getCurrentUserCompanyId();
             validatPhaseWeights(request.getPhases());
 
             Project project = new Project();
             project.setName(request.getName());
             project.setDescription(request.getDescription());
             project.setType(request.getType());
-            project.setCompanyId(request.getCompanyId());
+            project.setCompanyId(companyId);
             project.setStatus(ProjectStatus.PLANNING);
 
             Project.ProjectLocation location = new Project.ProjectLocation();
@@ -130,8 +134,9 @@ public class ProjectService {
     // soft delete
     public void deleteProject(String projectId) {
         try {
-            Project project = projectRepository.findById(projectId).orElseThrow(EntityNotFoundException::new);
-
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
             ProjectStatus oldStatus = project.getStatus();
             project.setStatus(ProjectStatus.CANCELLED);
             project.setUpdatedAt(LocalDateTime.now());
@@ -167,9 +172,10 @@ public class ProjectService {
 
     public ProjectResponse updateProject(UpdateProjectRequest request, String projectId) {
         try {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
 
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
             List<String> changedFields = new ArrayList<>();
 
             // Track location changes
@@ -301,14 +307,18 @@ public class ProjectService {
         }
     }
 
-    public List<ProjectResponse> getProjectsByCompanyId(String companyId) {
+    public List<ProjectResponse> getProjectsByCompanyId(String requestedCompanyId) {
         try {
-            List<Project> projects = projectRepository.findByCompanyId(companyId);
+            // ✅ Güvenlik: Kullanıcı sadece kendi company'sini görebilir
+            String currentUserCompanyId = securityUtils.getCurrentUserCompanyId();
 
-            if (projects.isEmpty()) {
-                throw new EntityNotFoundException("No projects found for company ID: " + companyId);
+            if (!currentUserCompanyId.equals(requestedCompanyId)) {
+                log.warn("User from company {} tried to access projects from company {}",
+                        currentUserCompanyId, requestedCompanyId);
+                throw new SecurityException("Cannot access projects from other companies");
             }
 
+            List<Project> projects = projectRepository.findByCompanyId(requestedCompanyId);
             return projectMapper.toProjectResponseList(projects);
 
         } catch (EntityNotFoundException e) {
@@ -316,35 +326,72 @@ public class ProjectService {
         }
     }
 
-    public ProjectDetailResponse getProjectDetailById(String id) {
+    @Transactional
+    public ProjectDetailResponse getProjectDetailById(String projectId, String companyId) {
         try {
-            Project project = projectRepository.findById(id)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + id));
+            log.info("Fetching project detail: {}", projectId);
+
+            boolean isWorker = SecurityContextHolder.getContext()
+                    .getAuthentication()
+                    .getAuthorities()
+                    .stream()
+                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_WORKER"));
+
+            Project project;
+
+            if (isWorker) {
+                log.info("Worker role detected - skipping company check");
+                project = projectRepository.findById(projectId)
+                        .orElseThrow(() -> new EntityNotFoundException("Project not found: " + projectId));
+            } else {
+
+                String effectiveCompanyId = (companyId != null && !companyId.isBlank())
+                        ? companyId
+                        : securityUtils.getCurrentUserCompanyId();
+
+                log.info("Using companyId: {}", effectiveCompanyId);
+
+                project = projectRepository.findByIdAndCompanyId(projectId, effectiveCompanyId)
+                        .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
+            }
 
             return projectMapper.toProjectDetailResponse(project);
 
         } catch (EntityNotFoundException e) {
-            log.error("Project not found: {}", id);
+            log.error("Project not found: {}", projectId);
             throw e;
+        } catch (Exception e) {
+            log.error("Error fetching project detail: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to fetch project detail", e);
         }
     }
 
     public List<ProjectResponse> getAllProjects() {
         try {
-            List<Project> projects = projectRepository.findAll();
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            log.info("Fetching all projects for company: {}", companyId);
+
+            List<Project> projects = projectRepository.findByCompanyId(companyId);
             return projectMapper.toProjectResponseList(projects);
         } catch (Exception e) {
             throw new RuntimeException("Error fetching all projects");
         }
     }
 
+    public String getCompanyIdByProjectId(String projectId) {
+        return projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found"))
+                .getCompanyId();
+    }
+
+
     @Transactional
     public ProjectMapResponse partialUpdateProject(String projectId, Map<String, Object> updates) {
         log.info("Partial update for project {} with fields: {}", projectId, updates.keySet());
 
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
-
+        String companyId = securityUtils.getCurrentUserCompanyId();
+        Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
         updates.forEach((key, value) -> {
             if (value != null) {
                 try {
@@ -551,7 +598,9 @@ public class ProjectService {
 
     public List<ProjectMapResponse> getProjectsForMap() {
         try {
-            List<Project> projects = projectRepository.findAll();
+            // ✅ Company bazlı filtreleme
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            List<Project> projects = projectRepository.findByCompanyIdWithLocation(companyId);
             return projectMapper.toProjectMapResponseList(projects);
         } catch (Exception e) {
             log.error("Error fetching projects for map", e);
@@ -560,10 +609,14 @@ public class ProjectService {
     }
 
 
+
     public ProjectProgressResponse getProjectProgress(String projectId) {
         try {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
+            // ✅ Company kontrolü eklendi
+            String companyId = securityUtils.getCurrentUserCompanyId();
+
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
 
             return projectMapper.toProjectProgressResponse(project);
 
@@ -575,9 +628,9 @@ public class ProjectService {
     @Transactional
     public void addPhase(String projectId, AddPhaseRequest request) {
         try {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
-
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
             /*List<CreateProjectRequest.PhaseDefinition> allPhases = project.getPhases().stream()
                     .map(phase -> {
                         CreateProjectRequest.PhaseDefinition def = new CreateProjectRequest.PhaseDefinition();
@@ -617,9 +670,9 @@ public class ProjectService {
     @Transactional
     public void updatePhaseProgress(String projectId, String phaseId, UpdateProgressRequest request) {
         try {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
-
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
             ProjectPhase phase = projectPhaseRepository.findById(Long.valueOf(phaseId))
                     .orElseThrow(() -> new EntityNotFoundException("Phase not found with id: " + phaseId));
 
@@ -721,9 +774,9 @@ public class ProjectService {
     @Transactional
     public void deletePhase(String projectId, String phaseId) {
         try {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new EntityNotFoundException("Project not found with id: " + projectId));
-
+            String companyId = securityUtils.getCurrentUserCompanyId();
+            Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
+                    .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
             ProjectPhase phase = projectPhaseRepository.findById(Long.valueOf(phaseId))
                     .orElseThrow(() -> new EntityNotFoundException("Phase not found with id: " + phaseId));
 

@@ -1,5 +1,6 @@
 package com.strux.user_service.service;
 
+import com.strux.user_service.client.AuthClient;
 import com.strux.user_service.dto.*;
 import com.strux.user_service.enums.AuditEvent;
 import com.strux.user_service.enums.UserRole;
@@ -16,10 +17,12 @@ import com.strux.user_service.repository.UserRatingRepository;
 import com.strux.user_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,10 +46,16 @@ public class UserService {
     private final UserMapper userMapper;
     private final AuditLogService auditLogService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final AuthClient authServiceClient;
+
+    @Autowired(required = false)
+    private RedisTemplate<String, Object> redisTemplate;
+
 
     private static final String USER_CACHE_PREFIX = "user:";
     private static final List<String> ALLOWED_IMAGE_TYPES = List.of("image/jpeg", "image/png", "image/jpg");
     private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024;
+
 
     @Transactional
     public UserResponse createUserFromAuthEvent(String keycloakId, String email,
@@ -97,47 +106,82 @@ public class UserService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<UserResponse> getUsersByIds(List<String> ids) {
+        try {
+            log.info("Fetching users by IDs: {}", ids);
+
+            if (ids == null || ids.isEmpty()) {
+                return List.of();
+            }
+
+            List<User> users = userRepository.findAllById(ids);
+
+            return users.stream()
+                    .map(userMapper::toResponse)
+                    .toList();
+
+        } catch (Exception e) {
+            log.error("Error fetching users by IDs: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to fetch users by IDs", e);
+        }
+    }
+
     @Transactional
     public UserResponse registerWorker(WorkerRegistrationRequest request) {
+        try {
+            log.info("Worker registration initiated - Email: {}", maskEmail(request.getEmail()));
 
-        User user = User.builder()
-                .email(request.getEmail())
-                .firstName(request.getFirstName())
-                .lastName(request.getLastName())
-                .phone(request.getPhone())
-                .city(request.getCity())
-                .companyId(request.getCompanyId())
-                .role(UserRole.WORKER)
-                .status(UserStatus.PENDING)
-                .build();
+            // ✅ 1. Check duplicate
+            if (userRepository.existsByEmail(request.getEmail())) {
+                throw new UserAlreadyExistsException("User already exists with this email");
+            }
 
-        WorkerProfile workerProfile = WorkerProfile.builder()
-                .specialty(request.getSpecialty())
-                .experienceYears(request.getExperienceYears())
-                .hourlyRate(request.getHourlyRate())
-                .rating(BigDecimal.ZERO)
-                .completedTasks(0)
-                .totalWorkDays(0)
-                .onTimeCompletionCount(0)
-                .lateCompletionCount(0)
-                .reliabilityScore(BigDecimal.valueOf(100))
-                .isAvailable(true)
-                .build();
+            RegisterRequest authRequest = RegisterRequest.builder()
+                    .email(request.getEmail())
+                    .password(request.getPassword())
+                    .firstName(request.getFirstName())
+                    .lastName(request.getLastName())
+                    .phone(request.getPhone())
+                    .role(UserRole.WORKER)
+                    .mode("independent")
+                    .position(request.getSpecialty() != null ? request.getSpecialty().name() : null)
+                    .build();
 
-        user.setWorkerProfile(workerProfile);
+            RegisterResponse authResponse = authServiceClient.registerUser(authRequest);
 
-        User savedUser = userRepository.save(user);
+            if (authResponse == null || authResponse.getUserId() == null) {
+                throw new UserServiceException("Auth service registration failed");
+            }
 
-        applicationEventPublisher.publishEvent(new UserCreatedEvent(
-                savedUser.getId().toString(),
-                request.getEmail(),
-                request.getPassword(),
-                request.getFirstName(),
-                request.getLastName(),
-                "WORKER"
-        ));
+            String keycloakId = authResponse.getUserId();
+            log.info("User created in Keycloak - KeycloakId: {}", keycloakId);
 
-        return userMapper.toResponse(savedUser);
+            // ✅ 3. Worker Profile məlumatlarını Redis-də saxla (temp)
+            String tempKey = "worker_profile_temp:" + keycloakId;
+            WorkerProfileTemp tempProfile = new WorkerProfileTemp(
+                    request.getSpecialty() != null ? request.getSpecialty().name() : null,
+                    request.getExperienceYears(),
+                    request.getHourlyRate(),
+                    request.getCity()
+            );
+
+            redisTemplate.opsForValue().set(tempKey, tempProfile, 10, TimeUnit.MINUTES);
+
+            log.info("Worker registration completed - KeycloakId: {}", keycloakId);
+
+
+            return UserResponse.builder()
+                    .message("Registration successful. Your account will be activated shortly.")
+                    .email(request.getEmail())
+                    .build();
+
+        } catch (UserAlreadyExistsException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Worker registration error: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to register worker", e);
+        }
     }
 
     @Transactional

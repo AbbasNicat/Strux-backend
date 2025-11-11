@@ -1,5 +1,7 @@
 package com.strux.auth_service.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.strux.auth_service.dto.*;
 import com.strux.auth_service.event.UserLoggedInEvent;
 import com.strux.auth_service.event.UserRegisteredEvent;
@@ -97,6 +99,8 @@ public class AuthService {
     private static final int KAFKA_RETRY_ATTEMPTS = 3;
     private static final int TEMP_SESSION_DURATION_MINUTES = 10;
 
+    private final CompanyInviteService companyInviteService;
+
     private static final Pattern PASSWORD_PATTERN = Pattern.compile(
             "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=!])(?=\\S+$).{12,}$"
     );
@@ -124,15 +128,19 @@ public class AuthService {
     public RegisterResponse register(RegisterRequest request, String ipAddress, String userAgent, String deviceFingerprint) {
         String userId = null;
         try {
-            log.info("Registration initiated from IP: {}", maskIp(ipAddress));
+            log.info("Registration initiated - Role: {}, Mode: {}, IP: {}",
+                    request.getRole(), request.getMode(), maskIp(ipAddress));
 
-            // Security checks
+            // ✅ 1. Role-based validation
+            request.validateForRole();
+
+            // ✅ 2. Security checks
             if (isBlockedCountry(ipAddress)) {
                 auditLogService.logSecurityEvent(AuditEvent.REGISTRATION_BLOCKED_GEO, null, ipAddress, userAgent);
                 throw new SecurityException("Registration from your location is not allowed");
             }
 
-            // Validation
+            // ✅ 3. Basic validation
             validateRegisterRequest(request);
             validatePasswordStrength(request.getPassword());
             validatePhoneNumber(request.getPhone());
@@ -145,87 +153,157 @@ public class AuthService {
                 throw new InvalidInputException("This password is too common. Please choose a more unique password");
             }
 
-            // Create user in Keycloak
-            userId = keycloakAdminService.createUser(request);
+            // ✅ 4. Company ID determination (COMPANY_ADMIN için)
+            String companyId = null;
+            String companyName = null;
+            String inviteCode = null;
 
-            // Assign role
+            if (request.getRole() == UserRole.COMPANY_ADMIN) {
+                if ("create".equalsIgnoreCase(request.getMode())) {
+                    companyId = generateSecureCompanyId();
+                    companyName = request.getCompanyName();
+                    log.info("Creating new company: {} with ID: {}", companyName, companyId);
+                } else if ("join".equalsIgnoreCase(request.getMode())) {
+                    companyId = companyInviteService.validateAndUseInviteCode(request.getInviteCode());
+                    log.info("User joining existing company: {}", companyId);
+                }
+            }
+            // WORKER veya USER için companyId = null (bağımsız kullanıcılar)
+
+            // ✅ 5. Keycloak'da kullanıcı oluştur
+            userId = keycloakAdminService.createUserWithCompanyId(request, companyId);
+
+            // ✅ 6. Role ata
             keycloakAdminService.assignRoleToUser(userId, request.getRole().toString());
 
-            // Register device
+            // ✅ 7. Device kaydet
             if (deviceFingerprint != null && !deviceFingerprint.isEmpty()) {
                 deviceFingerprintService.registerDevice(userId, deviceFingerprint, ipAddress, userAgent);
             }
 
-            // Store initial password in history
+            // ✅ 8. Password history kaydet
             passwordHistoryService.addPasswordToHistory(userId, request.getPassword());
 
-            // Publish event with retry
-            boolean eventPublished = publishUserRegisteredEvent(userId, request, ipAddress);
+            // ✅ 9. İlk admin için invite code oluştur
+            if (request.getRole() == UserRole.COMPANY_ADMIN && "create".equalsIgnoreCase(request.getMode())) {
+                inviteCode = companyInviteService.generateInviteCode(companyId, userId);
+            }
+
+            // ✅ 10. Kafka event publish
+            boolean eventPublished = publishUserRegisteredEvent(userId, request, ipAddress, companyId);
             if (!eventPublished) {
                 log.error("Failed to publish registration event after retries");
                 keycloakAdminService.deleteUser(userId);
                 throw new EventPublishException("Event could not be published after retries");
             }
 
-            // Audit log
+            // ✅ 11. Audit log
             auditLogService.logSecurityEvent(
                     AuditEvent.USER_REGISTERED,
                     userId,
                     ipAddress,
                     userAgent,
-                    Map.of("email", maskEmail(request.getEmail()))
+                    Map.of(
+                            "email", maskEmail(request.getEmail()),
+                            "role", request.getRole().toString(),
+                            "companyId", companyId != null ? companyId : "independent",
+                            "mode", request.getMode() != null ? request.getMode() : "N/A"
+                    )
             );
 
-            log.info("Registration completed successfully - UserId: {}", userId);
+            log.info("Registration completed - UserId: {}, Role: {}, CompanyId: {}",
+                    userId, request.getRole(), companyId);
+
+            // ✅ 12. Response oluştur
+            String message = buildRegistrationMessage(request.getRole(), inviteCode);
 
             return new RegisterResponse(
                     userId,
                     request.getEmail(),
-                    "Registration completed successfully. Please verify your email."
+                    message,
+                    companyId,
+                    inviteCode
             );
 
         } catch (InvalidInputException | EventPublishException | SecurityException e) {
-            // Clean up if user was created
             if (userId != null) {
-                try {
-                    keycloakAdminService.deleteUser(userId);
-                } catch (Exception cleanupEx) {
-                    log.error("Failed to cleanup user after error: {}", cleanupEx.getMessage());
-                }
+                cleanupFailedRegistration(userId);
             }
             throw e;
         } catch (Exception e) {
-            // Clean up if user was created
             if (userId != null) {
-                try {
-                    keycloakAdminService.deleteUser(userId);
-                } catch (Exception cleanupEx) {
-                    log.error("Failed to cleanup user after error: {}", cleanupEx.getMessage());
-                }
+                cleanupFailedRegistration(userId);
             }
             log.error("Registration error: {}", e.getMessage(), e);
             throw new RegistrationException("Registration failed: " + e.getMessage(), e);
         }
     }
 
-    private boolean publishUserRegisteredEvent(String userId, RegisterRequest request, String ipAddress) {
+    private String buildRegistrationMessage(UserRole role, String inviteCode) {
+        StringBuilder message = new StringBuilder("Registration completed successfully.");
+
+        switch (role) {
+            case COMPANY_ADMIN:
+                message.append(" Please verify your email to activate your account.");
+                if (inviteCode != null) {
+                    message.append(" Your invite code: ").append(inviteCode)
+                            .append(" (share this with team members)");
+                }
+                break;
+            case WORKER:
+                message.append(" Complete your worker profile to start receiving job opportunities.");
+                break;
+            case USER:
+                message.append(" You can now browse and hire professionals.");
+                break;
+            default:
+                message.append(" Please verify your email.");
+        }
+
+        return message.toString();
+    }
+
+    private void cleanupFailedRegistration(String userId) {
+        try {
+            keycloakAdminService.deleteUser(userId);
+        } catch (Exception cleanupEx) {
+            log.error("Failed to cleanup user after error: {}", cleanupEx.getMessage());
+        }
+    }
+
+    private String generateSecureCompanyId() {
+        return "company-" + java.util.UUID.randomUUID().toString();
+    }
+
+    private boolean publishUserRegisteredEvent(String keycloakId, RegisterRequest request, String ipAddress, String companyId) {
+        UserRegisteredEvent.WorkerProfileData workerProfile = null;
+        if (request.getRole() == UserRole.WORKER) {
+            workerProfile = new UserRegisteredEvent.WorkerProfileData(
+                    request.getSpecialty(),
+                    request.getExperienceYears(),
+                    request.getHourlyRate()
+            );
+        }
         UserRegisteredEvent event = new UserRegisteredEvent(
-                userId,
+                keycloakId,   // ← Keycloak ID
                 request.getFirstName(),
                 request.getLastName(),
                 maskPhone(request.getPhone()),
                 request.getEmail(),
                 LocalDateTime.now(),
                 request.getRole(),
-                request.getCompanyId(),
+                companyId,
                 request.getPosition()
         );
 
+        event.setWorkerProfile(workerProfile);
+        event.setCity(request.getCity());
+        event.setBio(request.getBio());
+
         for (int attempt = 1; attempt <= KAFKA_RETRY_ATTEMPTS; attempt++) {
             try {
-
                 kafkaTemplate.send("user-registered-events", event).get(5, TimeUnit.SECONDS);
-                log.info("Registration event sent successfully - UserId: {}, Attempt: {}", userId, attempt);
+                log.info("Registration event sent successfully - UserId: {}, Attempt: {}", keycloakId, attempt);
                 return true;
             } catch (Exception e) {
                 log.warn("Kafka event publishing failed (attempt {}/{}): {}", attempt, KAFKA_RETRY_ATTEMPTS, e.getMessage());
@@ -359,13 +437,23 @@ public class AuthService {
             recordFailedLogin(request.getEmail(), ipAddress, userAgent);
             log.warn("Login failed - Unauthorized: Email: {}", maskEmail(request.getEmail()));
             throw new AuthenticationException("Invalid email or password");
+        } catch (WebClientResponseException.BadRequest e) {  // ← YENİ EKLE
+            String errorBody = e.getResponseBodyAsString();
+            log.error("Keycloak 400 Bad Request - Response body: {}", errorBody);
+            log.error("Request details - URL: {}/realms/{}/protocol/openid-connect/token",
+                    keycloakServerUrl, realm);
+            log.error("Client ID: {}, Client Secret exists: {}",
+                    clientId, clientSecret != null && !clientSecret.isEmpty());
+
+            recordFailedLogin(request.getEmail(), ipAddress, userAgent);
+            throw new AuthenticationException("Login failed: " + errorBody);
         } catch (AccountLockedException | InvalidInputException | AuthenticationException |
                  SecurityException | CaptchaRequiredException e) {
             throw e;
-        } catch (Exception e) {
-            log.error("Login error: {}", e.getMessage(), e);
-            auditLogService.logSecurityEvent(AuditEvent.LOGIN_ERROR, null, ipAddress, userAgent);
-            throw new AuthenticationException("Login failed: " + e.getMessage(), e);
+        } catch (JsonMappingException e) {
+            throw new RuntimeException(e);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -416,11 +504,20 @@ public class AuthService {
 
     @Transactional
     public LoginResponse refreshToken(RefreshTokenRequest request) {
+        String userId = null; // ← EKLE
         try {
             log.info("Token refresh initiated");
 
             if (request.getRefreshToken() == null || request.getRefreshToken().isEmpty()) {
                 throw new InvalidInputException("Refresh token is required");
+            }
+
+            // ✅ ÖNCELİKLE TOKEN'DAN USER ID ÇEK (expire kontrolü yapmadan)
+            try {
+                userId = extractUserIdFromRefreshToken(request.getRefreshToken());
+            } catch (Exception e) {
+                log.warn("Could not extract userId from refresh token: {}", e.getMessage());
+                // userId null kalabilir - audit log için
             }
 
             String tokenUrl = String.format(
@@ -446,7 +543,12 @@ public class AuthService {
             JsonNode jsonNode = objectMapper.readTree(response);
 
             if (!jsonNode.has("access_token")) {
-                auditLogService.logSecurityEvent(AuditEvent.TOKEN_REFRESH_FAILED, null, null, null);
+                auditLogService.logSecurityEvent(
+                        AuditEvent.TOKEN_REFRESH_FAILED,
+                        userId,  // ← ARTIK NULL DEĞİL
+                        null,
+                        null
+                );
                 throw new AuthenticationException("Token refresh failed");
             }
 
@@ -480,15 +582,43 @@ public class AuthService {
                     .build();
 
         } catch (WebClientResponseException.BadRequest e) {
-            log.warn("Invalid refresh token");
-            auditLogService.logSecurityEvent(AuditEvent.TOKEN_REFRESH_FAILED, null, null, null);
+            log.warn("Invalid refresh token - UserId: {}", userId);
+            auditLogService.logSecurityEvent(
+                    AuditEvent.TOKEN_REFRESH_FAILED,
+                    userId,  // ← ÖNCEDEKİ TOKEN'DAN ALINDI
+                    null,
+                    null
+            );
             throw new AuthenticationException("Refresh token is invalid or expired");
         } catch (InvalidInputException | AuthenticationException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Token refresh error: {}", e.getMessage(), e);
-            auditLogService.logSecurityEvent(AuditEvent.TOKEN_REFRESH_FAILED, null, null, null);
+            log.error("Token refresh error - UserId: {}: {}", userId, e.getMessage(), e);
+            auditLogService.logSecurityEvent(
+                    AuditEvent.TOKEN_REFRESH_FAILED,
+                    userId,
+                    null,
+                    null
+            );
             throw new AuthenticationException("Token refresh failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ✅ YENİ HELPER METOD EKLE
+    private String extractUserIdFromRefreshToken(String refreshToken) {
+        try {
+            String[] tokenParts = refreshToken.split("\\.");
+            if (tokenParts.length < 2) {
+                return null;
+            }
+
+            String payload = new String(Base64.getUrlDecoder().decode(tokenParts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
+
+            return payloadNode.has("sub") ? payloadNode.get("sub").asText() : null;
+        } catch (Exception e) {
+            log.debug("Could not parse refresh token: {}", e.getMessage());
+            return null;
         }
     }
 

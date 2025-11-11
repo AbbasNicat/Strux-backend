@@ -1,9 +1,7 @@
 package com.strux.user_service.controller;
 
-import com.strux.user_service.dto.UserResponse;
-import com.strux.user_service.dto.WorkerPerformanceUpdateRequest;
-import com.strux.user_service.dto.WorkerRegistrationRequest;
-import com.strux.user_service.dto.WorkerStatsResponse;
+import com.strux.user_service.config.SecurityUtils;
+import com.strux.user_service.dto.*;
 import com.strux.user_service.enums.WorkerSpecialty;
 import com.strux.user_service.service.UserService;
 import com.strux.user_service.service.WorkerService;
@@ -11,10 +9,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -30,6 +30,7 @@ public class WorkerController {
 
     private final WorkerService workerService;
     private final UserService userService;
+    private final SecurityUtils securityUtils;
 
 //    @PostMapping("/register")
 //    public ResponseEntity<UserResponse> registerWorker(
@@ -40,6 +41,39 @@ public class WorkerController {
 //        UserResponse response = userService.registerWorker(request);
 //        return ResponseEntity.status(HttpStatus.CREATED).body(response);
 //    }
+
+    @DeleteMapping("/{workerId}/company")
+    @PreAuthorize("hasAnyRole('ADMIN', 'COMPANY_ADMIN', 'MANAGER')")
+    public ResponseEntity<Void> removeWorkerFromCompany(
+            @PathVariable UUID workerId,
+            @RequestParam String companyId,
+            @RequestHeader(value = "X-User-Id", required = false) String removedBy) {
+
+        log.info("DELETE /api/workers/{}/company - Removing from company: {}", workerId, companyId);
+
+        try {
+            // Security check: User must be from the same company
+            String currentUserCompanyId = securityUtils.getCurrentUserCompanyId();
+
+            if (!currentUserCompanyId.equals(companyId)) {
+                log.warn("⚠️ User from company {} tried to remove employee from company {}",
+                        currentUserCompanyId, companyId);
+                throw new SecurityException("Cannot remove employees from other companies");
+            }
+
+            workerService.removeEmployeeFromCompany(companyId, workerId.toString(), removedBy);
+
+            log.info("✅ Worker {} removed from company {}", workerId, companyId);
+            return ResponseEntity.noContent().build();
+
+        } catch (SecurityException e) {
+            log.error("❌ Security violation: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (Exception e) {
+            log.error("❌ Error removing worker from company: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 
     @GetMapping("/search")
     public ResponseEntity<Page<UserResponse>> searchWorkers(
@@ -58,14 +92,46 @@ public class WorkerController {
         return ResponseEntity.ok(response);
     }
 
+
     @GetMapping("/company/{companyId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'WORKER')") // ✅ Worker de görebilir
     public ResponseEntity<Page<UserResponse>> getCompanyWorkers(
             @PathVariable String companyId,
-            Pageable pageable) {
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
 
-        log.info("GET /api/workers/company/{}", companyId);
-        Page<UserResponse> response = workerService.getCompanyWorkers(companyId, pageable);
-        return ResponseEntity.ok(response);
+        try {
+            String currentUserCompanyId = securityUtils.getCurrentUserCompanyId();
+
+            log.info("Fetching company workers - Requested: {}, Current User's Company: {}",
+                    companyId, currentUserCompanyId);
+
+            if (!currentUserCompanyId.equals(companyId)) {
+                log.warn("⚠️ User from company {} tried to access company {}",
+                        currentUserCompanyId, companyId);
+                throw new SecurityException("Cannot access other company's workers");
+            }
+
+            Pageable pageable = PageRequest.of(page, size);
+            Page<UserResponse> workers = workerService.getCompanyWorkers(companyId, pageable);
+
+            log.info("✅ Found {} workers for company {}", workers.getTotalElements(), companyId);
+            return ResponseEntity.ok(workers);
+
+        } catch (SecurityException e) {
+            log.error("❌ Security violation: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (Exception e) {
+            log.error("❌ Error fetching company workers: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/{workerId}/projects")
+    public ResponseEntity<List<ProjectResponse>> getWorkerProjects(@PathVariable String workerId) {
+        log.info("GET /api/workers/{}/projects", workerId);
+        List<ProjectResponse> projects = workerService.getWorkerProjects(workerId);
+        return ResponseEntity.ok(projects);
     }
 
     @GetMapping("/company/{companyId}/all")

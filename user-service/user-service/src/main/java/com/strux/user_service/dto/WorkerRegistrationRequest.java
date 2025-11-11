@@ -31,7 +31,6 @@ public class WorkerRegistrationRequest {
     private String city;
     private String companyId;
 
-
     @NotNull
     private WorkerSpecialty specialty;
 
