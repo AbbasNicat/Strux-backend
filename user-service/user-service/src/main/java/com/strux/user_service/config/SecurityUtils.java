@@ -5,7 +5,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
+
+import java.util.Collection;
 
 @Component
 @Slf4j
@@ -20,13 +23,27 @@ public class SecurityUtils {
             }
 
             if (authentication.getPrincipal() instanceof Jwt jwt) {
-                // ✅ JWT'den company_id claim'ini al
+                // ✅ Worker kontrolü yap
+                Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+                boolean isWorker = authorities.stream()
+                        .anyMatch(a -> a.getAuthority().equals("ROLE_WORKER") ||
+                                a.getAuthority().equals("WORKER") ||
+                                a.getAuthority().equals("SCOPE_WORKER"));
+
+                // JWT'den company_id claim'ini al
                 String companyId = jwt.getClaim("company_id");
 
+                // ✅ Worker ise companyId opsiyonel (null olabilir)
+                if (isWorker) {
+                    log.debug("✅ Worker user - Company ID: {}", companyId != null ? companyId : "null (independent)");
+                    return companyId;  // null olabilir, sorun yok
+                }
+
+                // ❌ Admin/Company user için companyId zorunlu
                 if (companyId == null || companyId.isBlank()) {
-                    log.error("❌ Company ID not found in JWT token");
+                    log.error("❌ Company ID not found in JWT token for non-worker user");
                     log.debug("JWT claims: {}", jwt.getClaims());
-                    throw new SecurityException("Company ID not found in token");
+                    throw new SecurityException("Company ID required for this role");
                 }
 
                 log.debug("✅ Company ID from JWT: {}", companyId);
@@ -35,6 +52,8 @@ public class SecurityUtils {
 
             throw new SecurityException("Invalid authentication type");
 
+        } catch (SecurityException e) {
+            throw e;  // Re-throw SecurityException
         } catch (Exception e) {
             log.error("❌ Error getting company ID: {}", e.getMessage());
             throw new SecurityException("Failed to get company ID", e);
@@ -58,5 +77,15 @@ public class SecurityUtils {
                     .orElse("ROLE_UNKNOWN");
         }
         return "ROLE_UNKNOWN";
+    }
+
+    // ✅ Yeni helper metod ekle
+    public boolean isWorker() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null) {
+            return authentication.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().contains("WORKER"));
+        }
+        return false;
     }
 }

@@ -1,11 +1,14 @@
 package com.strux.auth_service.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -15,22 +18,28 @@ public class GeoLocationService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final WebClient webClient;
+    private final ObjectMapper objectMapper;
     private static final String LOCATION_PREFIX = "location:";
 
     public String getCountryCode(String ipAddress) {
         try {
-            // Use a free IP geolocation API (replace with your preferred service)
+            // ✅ Increase timeout
             String response = webClient.get()
-                    .uri("https://ipapi.co/" + ipAddress + "/country_code/")
+                    .uri("http://ip-api.com/json/" + ipAddress)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(java.time.Duration.ofSeconds(3))
+                    .timeout(Duration.ofSeconds(5))  // 3s -> 5s
+                    .onErrorReturn("{\"countryCode\":\"UNKNOWN\"}")  // ✅ Fallback
                     .block();
 
-            return response != null ? response.trim() : "UNKNOWN";
+            JsonNode jsonNode = objectMapper.readTree(response);
+            return jsonNode.has("countryCode")
+                    ? jsonNode.get("countryCode").asText()
+                    : "UNKNOWN";
+
         } catch (Exception e) {
-            log.error("Geolocation lookup failed: {}", e.getMessage());
-            return "UNKNOWN";
+            log.warn("Geolocation lookup failed: {}", e.getMessage());
+            return "UNKNOWN";  // ✅ Always return something
         }
     }
 

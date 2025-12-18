@@ -56,6 +56,27 @@ public class UserService {
     private static final List<String> ALLOWED_IMAGE_TYPES = List.of("image/jpeg", "image/png", "image/jpg");
     private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 
+    @Transactional(readOnly = true)
+    public Page<UserResponse> getAllUsers(String role, Pageable pageable) {
+        try {
+            log.debug("Fetching all users - role filter: {}", role);
+
+            Page<User> users;
+
+            if (role != null && !role.isEmpty()) {
+                UserRole userRole = UserRole.valueOf(role.toUpperCase());
+                users = userRepository.findByRoleAndStatus(userRole, UserStatus.ACTIVE, pageable);
+            } else {
+                users = userRepository.findByStatus(UserStatus.ACTIVE, pageable);
+            }
+
+            return users.map(userMapper::toResponse);
+
+        } catch (Exception e) {
+            log.error("Error fetching all users: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to fetch users", e);
+        }
+    }
 
     @Transactional
     public UserResponse createUserFromAuthEvent(String keycloakId, String email,

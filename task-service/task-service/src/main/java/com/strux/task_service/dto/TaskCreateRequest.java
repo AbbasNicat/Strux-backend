@@ -48,6 +48,9 @@ public class TaskCreateRequest {
     private LocalDateTime dueDate;
     private LocalDateTime completedAt;
 
+    private String unitId;
+
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

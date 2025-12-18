@@ -15,6 +15,7 @@ public class LocationDetailDTO {
     private String formattedAddress;
     private Double latitude;
     private Double longitude;
+    private String district;
     private String city;
     private String region;
     private String country;

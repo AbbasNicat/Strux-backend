@@ -4,165 +4,172 @@ spring:
 
   cloud:
     gateway:
+      # ==================== GLOBAL CORS ====================
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - "https://app.strux.az"
+              - "https://admin.strux.az"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+
+      # ==================== ROUTES ====================
       routes:
-        # ==================== AUTH SERVICE (PUBLIC) ====================
         - id: auth-service
-          uri: http://localhost:9091
+          uri: http://auth-service:9091
           predicates:
             - Path=/api/auth/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
 
-        # ==================== USER SERVICE ====================
         - id: user-service
-          uri: http://localhost:9092
+          uri: http://user-service:9093
           predicates:
             - Path=/api/users/**
           filters:
-            - TokenRelay=
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
 
-        # ==================== COMPANY SERVICE ====================
+        - id: worker-service
+          uri: http://user-service:9093
+          predicates:
+            - Path=/api/workers/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+
         - id: company-service
-          uri: http://localhost:9093
+          uri: http://company-service:9094
           predicates:
-            - Path=/api/company/**
+            - Path=/api/companies/**
           filters:
-            - TokenRelay=
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 30
+                redis-rate-limiter.burstCapacity: 60
 
-        # ==================== DOCUMENT SERVICE ====================
-        - id: document-service
-          uri: http://localhost:9094
-          predicates:
-            - Path=/api/documents/**
-          filters:
-            - TokenRelay=
-
-        # ==================== ISSUE SERVICE ====================
-        - id: issue-service
-          uri: http://localhost:9095
-          predicates:
-            - Path=/api/issues/**
-          filters:
-            - TokenRelay=
-
-        # ==================== LOCATION SERVICE ====================
-        - id: location-service
-          uri: http://localhost:9096
-          predicates:
-            - Path=/api/locations/**
-          filters:
-            - TokenRelay=
-
-        # ==================== NOTIFICATION SERVICE ====================
-        - id: notification-service
-          uri: http://localhost:9097
-          predicates:
-            - Path=/api/notifications/**
-          filters:
-            - TokenRelay=
-
-        # ==================== PROGRESS SERVICE ====================
-        - id: progress-service
-          uri: http://localhost:9098
-          predicates:
-            - Path=/api/progress/**
-          filters:
-            - TokenRelay=
-
-        # ==================== PROJECT SERVICE ====================
         - id: project-service
-          uri: http://localhost:9099
+          uri: http://project-service:9095
           predicates:
-            - Path=/api/projects/**
+            - Path=/api/projects/**,/api/locations/**
           filters:
-            - TokenRelay=
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
 
-        # ==================== SCHEDULE SERVICE ====================
-        - id: schedule-service
-          uri: http://localhost:9100
-          predicates:
-            - Path=/api/schedules/**
-          filters:
-            - TokenRelay=
-
-        # ==================== TASK SERVICE ====================
         - id: task-service
-          uri: http://localhost:9101
+          uri: http://task-service:9096
           predicates:
             - Path=/api/tasks/**
           filters:
-            - TokenRelay=
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
 
-        # ==================== UNIT SERVICE ====================
+        - id: issue-service
+          uri: http://issue-service:9097
+          predicates:
+            - Path=/api/issues/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 30
+                redis-rate-limiter.burstCapacity: 60
+
+        - id: notification-service
+          uri: http://notification-service:9098
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+
         - id: unit-service
-          uri: http://localhost:9102
+          uri: http://unit-service:9099
           predicates:
             - Path=/api/units/**
           filters:
-            - TokenRelay=
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 30
+                redis-rate-limiter.burstCapacity: 60
 
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8080/realms/Strux-realm
-          jwk-set-uri: http://localhost:8080/realms/Strux-realm/protocol/openid-connect/certs
+        - id: document-service
+          uri: http://document-service:9089
+          predicates:
+            - Path=/api/documents/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
 
+      # ==================== DEFAULT FILTERS ====================
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - name: Retry
+          args:
+            retries: 3
+            statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+            methods: GET
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+              basedOnPreviousValue: false
+
+  # ==================== REDIS ====================
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 60000
+
+# ==================== SERVER ====================
 server:
-  port: 8081
+  port: 8888
 
-
+# ==================== EUREKA ====================
 eureka:
   client:
-    enabled: false
+    enabled: true
 
+# ==================== ACTUATOR ====================
 management:
   endpoints:
     web:
       exposure:
-        include: "*"
+        include: health,info,metrics,gateway
   endpoint:
     health:
       show-details: always
-  health:
-    circuitbreakers:
+    gateway:
       enabled: true
 
-keycloak:
-  server-url: http://localhost:8080
-  realm: Strux-realm
-  admin-client-id: admin-cli
-  admin-username: admin_new
-  admin-password: admin123
-  client-id: Strux-backend
-  client-secret: KgHl85Qeibi8xBrxk28iRTEWoYTWZuKa
-
-resilience4j:
-  circuitbreaker:
-    instances:
-      auth-service:
-        register-health-indicator: true
-        sliding-window-size: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 30000
-      user-service:
-        register-health-indicator: true
-        sliding-window-size: 10
-      company-service:
-        register-health-indicator: true
-        sliding-window-size: 10
-      document-service:
-        register-health-indicator: true
-        sliding-window-size: 10
-      project-service:
-        register-health-indicator: true
-        sliding-window-size: 10
-
+# ==================== LOGGING ====================
 logging:
   level:
     root: INFO
-    org.springframework.cloud.gateway: DEBUG
-    org.springframework.security: DEBUG
-    org.springframework.web: DEBUG
-    reactor.netty: DEBUG
-    com.strux.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

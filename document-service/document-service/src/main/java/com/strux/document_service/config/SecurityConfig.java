@@ -78,6 +78,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/documents/upload").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/documents/upload-form").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/documents/bulk-upload").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/folders").authenticated()
+
+                        // Get folder and tree - All authenticated users
+                        .requestMatchers(HttpMethod.GET, "/api/folders/**").authenticated()
+
+                        // Update folder - Company Admin or Super Admin
+                        .requestMatchers(HttpMethod.PUT, "/api/folders/{folderId}").hasAnyRole("COMPANY_ADMIN", "SUPER_ADMIN", "PROJECT_MANAGER")
+
+                        // Delete folder - Company Admin or Super Admin
+                        .requestMatchers(HttpMethod.DELETE, "/api/folders/{folderId}").hasAnyRole("COMPANY_ADMIN", "SUPER_ADMIN")
+
+                        // Move folder - Company Admin or Super Admin
+                        .requestMatchers(HttpMethod.PUT, "/api/folders/{folderId}/move").hasAnyRole("COMPANY_ADMIN", "SUPER_ADMIN", "PROJECT_MANAGER")
 
                         // Get document - All authenticated users can view
                         .requestMatchers(HttpMethod.GET, "/api/documents/{documentId}").authenticated()

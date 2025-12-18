@@ -15,6 +15,8 @@ public class DocumentUpdateRequest {
     private DocumentType documentType;
     private DocumentCategory category;
     private String description;
+    private String folderId;
+
     private Set<String> tags;
     private Boolean isPublic;
 }

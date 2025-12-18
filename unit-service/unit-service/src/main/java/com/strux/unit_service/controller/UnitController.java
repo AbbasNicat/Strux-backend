@@ -1,6 +1,5 @@
 package com.strux.unit_service.controller;
 
-
 import com.strux.unit_service.dto.*;
 import com.strux.unit_service.enums.*;
 import com.strux.unit_service.service.UnitService;
@@ -11,7 +10,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-
 import java.util.List;
 
 @RestController
@@ -21,6 +19,34 @@ import java.util.List;
 public class UnitController {
 
     private final UnitService unitService;
+
+    @GetMapping("/project/{projectId}/count")
+    public ResponseEntity<Long> countUnitsByProject(@PathVariable String projectId) {
+        Long count = unitService.getUnitCount(projectId);
+        return ResponseEntity.ok(count);
+    }
+
+    @GetMapping("/project/{projectId}/map-info")
+    public ResponseEntity<List<UnitMapInfo>> getProjectUnitsForMap(@PathVariable String projectId) {
+        log.info("📍 Fetching map info for project units: {}", projectId);
+        List<UnitMapInfo> mapInfo = unitService.getProjectUnitsForMap(projectId);
+        return ResponseEntity.ok(mapInfo);
+    }
+
+    @GetMapping("/map/{projectId}")
+    public ResponseEntity<List<UnitMapGeometry>> getMapGeometry(@PathVariable String projectId) {
+        return ResponseEntity.ok(unitService.getMapGeometry(projectId));
+    }
+
+    @GetMapping("/project/{projectId}/ids")
+    public ResponseEntity<List<String>> getProjectUnitIds(@PathVariable String projectId) {
+        log.info("📋 Getting unit IDs for project: {}", projectId);
+
+        List<String> unitIds = unitService.getUnitIdsByProjectId(projectId);
+
+        log.info("✅ Found {} unit IDs for project {}", unitIds.size(), projectId);
+        return ResponseEntity.ok(unitIds);
+    }
 
     @PostMapping
     public ResponseEntity<UnitDto> createUnit(@RequestBody @Valid UnitCreateRequest request) {
@@ -35,12 +61,27 @@ public class UnitController {
         return ResponseEntity.ok(unit);
     }
 
+    @GetMapping("/{buildingId}/floor-plans")
+    public ResponseEntity<List<UnitDto>> getBuildingFloorPlans(@PathVariable String buildingId) {
+        List<UnitDto> floorPlans = unitService.getBuildingFloorPlans(buildingId);
+        return ResponseEntity.ok(floorPlans);
+    }
+
+    // ✅ NEW: Building'in tüm detaylarını getir (floor schemas + sub-units ayrı ayrı)
+    @GetMapping("/{buildingId}/details")
+    public ResponseEntity<BuildingDetailsDto> getBuildingDetails(@PathVariable String buildingId) {
+        BuildingDetailsDto details = unitService.getBuildingDetails(buildingId);
+        return ResponseEntity.ok(details);
+    }
+
+    // ✅ FIX: Sadece gerçek unit'leri getir (floor schema'lar hariç)
     @GetMapping("/project/{projectId}")
     public ResponseEntity<List<UnitDto>> getUnitsByProject(@PathVariable String projectId) {
         List<UnitDto> units = unitService.getUnitsByProject(projectId);
         return ResponseEntity.ok(units);
     }
 
+    // ✅ FIX: Sadece sub-unit'leri getir (floor schema'lar hariç)
     @GetMapping("/building/{buildingId}")
     public ResponseEntity<List<UnitDto>> getUnitsByBuilding(@PathVariable String buildingId) {
         List<UnitDto> units = unitService.getUnitsByBuilding(buildingId);
@@ -167,7 +208,6 @@ public class UnitController {
         return ResponseEntity.noContent().build();
     }
 
-
     @PostMapping("/{unitId}/work-items")
     public ResponseEntity<UnitWorkItemDto> addWorkItem(
             @PathVariable String unitId,
@@ -198,10 +238,31 @@ public class UnitController {
         return ResponseEntity.noContent().build();
     }
 
-
     @GetMapping("/project/{projectId}/stats")
     public ResponseEntity<UnitStatsResponse> getUnitStats(@PathVariable String projectId) {
         UnitStatsResponse stats = unitService.getUnitStats(projectId);
         return ResponseEntity.ok(stats);
+    }
+
+    @GetMapping("/{unitId}/workers")
+    public ResponseEntity<List<UserResponse>> getUnitWorkers(@PathVariable String unitId) {
+        log.info("GET /api/units/{}/workers", unitId);
+        List<UserResponse> workers = unitService.getUnitWorkers(unitId);
+        return ResponseEntity.ok(workers);
+    }
+
+    @GetMapping("/{unitId}/project-id")
+    public ResponseEntity<String> getProjectIdByUnit(@PathVariable String unitId) {
+        log.info("Fetching projectId for unit: {}", unitId);
+        UnitDto unit = unitService.getUnit(unitId);
+        return ResponseEntity.ok(unit.getProjectId());
+    }
+
+    @GetMapping("/{unitId}/name")
+    public ResponseEntity<String> getUnitName(@PathVariable String unitId) {
+        log.info("Fetching unit name for: {}", unitId);
+        UnitDto unit = unitService.getUnit(unitId);
+        String name = unit.getUnitName() != null ? unit.getUnitName() : "Unit " + unit.getUnitNumber();
+        return ResponseEntity.ok(name);
     }
 }

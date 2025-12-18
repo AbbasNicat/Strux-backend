@@ -74,6 +74,8 @@ public class TaskDto {
 
     private List<String> tags;
 
+    private String unitId;
+
     private Boolean isRecurring;
     private String recurrencePattern;  // daily, weekly, monthly
 

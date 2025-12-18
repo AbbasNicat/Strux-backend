@@ -44,6 +44,22 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-gateway</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-gateway-server</artifactId>
+        </dependency>
+
+        <!-- Gateway Filterləri tam olaraq yüklənsin deyə -->
 
         <!-- EUREKA CLIENT -->
         <dependency>
@@ -51,19 +67,6 @@
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
         <!-- OAUTH2 CLIENT - TokenRelay burada geliyor -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-client</artifactId>
-        </dependency>
-
-
-
-        <!-- REACTIVE OAUTH2 RESOURCE SERVER -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-        </dependency>
-
         <!-- ACTUATOR -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -95,15 +98,7 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
-            <scope>test</scope>
-        </dependency>
+
     </dependencies>
 
     <!-- ============================================ -->

@@ -11,6 +11,7 @@ public class DocumentApprovalRequest {
     private DocumentApprovalStatus status;
     private String approverComments;
     private String approvedBy;
+    private String folderId;
     private Integer qualityRating;  // 1-5 ulduz
     private Boolean updateTaskProgress;
 }

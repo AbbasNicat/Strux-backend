@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 // google map response
 @Data
@@ -20,8 +21,11 @@ public class ProjectMapResponse {
     private String name;
     private ProjectType type;
     private ProjectStatus status;
+
     private String latitude;
     private String longitude;
+    private List<CoordinateDTO> boundaryCoordinates;
+
     private String address;
     private String city;
 
@@ -31,6 +35,7 @@ public class ProjectMapResponse {
     private BigDecimal overallProgress;
     private String imageUrl;
 
-    // Marker icon için
+    private List<UnitMapInfo> units;
+
     private String statusColor; // Frontend'de kullanılacak
 }

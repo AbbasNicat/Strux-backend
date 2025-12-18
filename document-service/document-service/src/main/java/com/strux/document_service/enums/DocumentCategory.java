@@ -23,6 +23,8 @@ public enum DocumentCategory {
     FLOORING,
     LANDSCAPING,
 
+    PROFILE,
+
     // Other
     INSPECTION,
     MAINTENANCE,

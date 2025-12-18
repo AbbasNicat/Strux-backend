@@ -21,7 +21,9 @@ import java.util.List;
 @Repository
 public interface DocumentRepository extends MongoRepository<Document, String> {
 
-    // ==================== EXISTING METHODS ====================
+    List<Document> findByFolderIdAndStatus(String folderId, DocumentStatus status);
+
+    Long countByFolderId(String folderId);
 
     List<Document> findByEntityTypeAndEntityIdAndStatus(EntityType entityType, String entityId, DocumentStatus status);
 

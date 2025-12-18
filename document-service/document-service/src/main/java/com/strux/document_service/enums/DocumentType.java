@@ -1,7 +1,6 @@
 package com.strux.document_service.enums;
 
 public enum DocumentType {
-
     CONTRACT,
     INVOICE,
     REPORT,
@@ -21,6 +20,8 @@ public enum DocumentType {
 
     MATERIAL_DELIVERY,
     EQUIPMENT_LOG,
+
+    AVATAR,
 
     BLUEPRINT,
     FLOOR_PLAN,

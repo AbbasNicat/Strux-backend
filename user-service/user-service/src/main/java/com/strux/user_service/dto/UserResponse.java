@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Data
@@ -45,4 +46,6 @@ public class UserResponse {
     private String profileImageUrl;
     private Boolean emailVerified;
     private Boolean phoneVerified;
+
+    private Set<String> assignedUnitIds;
 }

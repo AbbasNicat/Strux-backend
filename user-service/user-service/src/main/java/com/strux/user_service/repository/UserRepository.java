@@ -20,7 +20,27 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     Optional<User> findByKeycloakId(String keycloakId);
 
+    @Query("SELECT u FROM User u WHERE LOWER(u.email) = LOWER(:email)")
     Optional<User> findByEmail(String email);
+
+    Page<User> findByRoleAndStatus(UserRole role, UserStatus status, Pageable pageable);
+
+    Long countByCompanyIdAndRole(String companyId, UserRole role);
+
+    @Query(value = """
+    SELECT COUNT(DISTINCT uap.user_id)
+    FROM user_active_project_ids uap
+    WHERE uap.active_project_ids = :projectId
+""", nativeQuery = true)
+    Long countWorkersByProjectId(@Param("projectId") String projectId);
+
+    @Query(value = """
+    SELECT COUNT(DISTINCT u.id)
+    FROM public.users u
+    JOIN public.worker_assigned_units wau ON wau.user_id = u.id
+    WHERE wau.unit_id IN (:unitIds)
+""", nativeQuery = true)
+    Long countWorkersAssignedToUnits(@Param("unitIds") List<String> unitIds);
 
     boolean existsByKeycloakId(String keycloakId);
 
@@ -99,5 +119,13 @@ public interface UserRepository extends JpaRepository<User, String> {
             @Param("specialty") WorkerSpecialty specialty,
             @Param("status") UserStatus status,
             Pageable pageable
+    );
+
+    @Query("SELECT u FROM User u JOIN u.workerProfile wp " +
+            "WHERE :unitId MEMBER OF wp.assignedUnitIds " +
+            "AND u.status = :status")
+    List<User> findWorkersByUnitId(
+            @Param("unitId") String unitId,
+            @Param("status") UserStatus status
     );
 }

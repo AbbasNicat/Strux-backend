@@ -4,7 +4,6 @@ import com.strux.document_service.enums.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
-
 import java.util.Set;
 
 @Data
@@ -13,21 +12,25 @@ import java.util.Set;
 @AllArgsConstructor
 public class DocumentUploadRequest {
 
-    @NotNull(message = "Document type is required")
+    // ✅ OPTIONAL - Frontend göndermiyor
     private DocumentType documentType;
+
+    private String folderId;
 
     private DocumentCategory category;
     private String description;
     private Set<String> tags;
 
-    @NotNull(message = "Entity type is required")
+    // ✅ OPTIONAL - Frontend bazen göndermiyor
     private EntityType entityType;
 
-    @NotNull(message = "Entity ID is required")
+    // ✅ OPTIONAL - Frontend bazen göndermiyor
     private String entityId;
 
+    // ✅ SADECE BU ZORUNLU
     @NotNull(message = "Company ID is required")
     private String companyId;
 
     private Boolean isPublic;
+    private Boolean requiresApproval;  // ✅ Frontend için ekle
 }

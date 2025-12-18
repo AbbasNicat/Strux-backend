@@ -1,5 +1,8 @@
 package com.strux.project_service.service;
 
+import com.strux.project_service.client.TaskClient;
+import com.strux.project_service.client.UnitClient;
+import com.strux.project_service.client.WorkerClient;
 import com.strux.project_service.config.SecurityUtils;
 import com.strux.project_service.dto.*;
 import com.strux.project_service.enums.PhaseStatus;
@@ -17,8 +20,11 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -39,8 +45,95 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ProjectMapper projectMapper;
+    private final RestTemplate restTemplate;
     private final ProjectPhaseRepository projectPhaseRepository;
     private final SecurityUtils securityUtils; // Constructor'a eklenecek
+
+    private final WorkerClient workerClient;
+    private final UnitClient unitClient;
+    private final TaskClient taskClient;
+
+    public List<ProjectStatsResponse> getCompanyProjectStats(String companyId) {
+        log.info("📊 Getting project stats for company: {}", companyId);
+
+        List<Project> projects = projectRepository.findByCompanyId(companyId);
+
+        return projects.stream()
+                .map(project -> {
+
+                    Long workerCount = 0L;
+                    Long unitCount = 0L;
+                    Long taskCount = 0L;
+
+                    // ✅ Worker count with proper error logging
+                    try {
+                        workerCount = workerClient.getProjectWorkerStats(project.getId()).getTotalWorkers();
+                        log.info("✅ Project {} has {} workers", project.getId(), workerCount);
+                    } catch (Exception e) {
+                        log.error("❌ Failed to get worker count for project {}: {}",
+                                project.getId(), e.getMessage(), e);
+                    }
+
+                    // ✅ Unit count with proper error logging
+                    try {
+                        unitCount = unitClient.countUnitsByProject(project.getId());
+                        log.info("✅ Project {} has {} units", project.getId(), unitCount);
+                    } catch (Exception e) {
+                        log.error("❌ Failed to get unit count for project {}: {}",
+                                project.getId(), e.getMessage(), e);
+                    }
+
+                    // ✅ Task count with proper error logging
+                    try {
+                        taskCount = taskClient.getProjectTaskStats(project.getId()).getTotal();
+                        log.info("✅ Project {} has {} tasks", project.getId(), taskCount);
+                    } catch (Exception e) {
+                        log.error("❌ Failed to get task count for project {}: {}",
+                                project.getId(), e.getMessage(), e);
+                    }
+
+                    return new ProjectStatsResponse(
+                            project.getId(),
+                            project.getName(),
+                            workerCount,
+                            unitCount,
+                            taskCount,
+                            project.getCompletionPercentage()
+                    );
+                })
+                .toList();
+    }
+
+    private String getCompanyIdFromToken() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            Jwt jwt = (Jwt) auth.getPrincipal();
+
+            // 1. Önce token'da company_id var mı bak
+            String companyId = jwt.getClaim("company_id");
+            if (companyId != null) {
+                return companyId;
+            }
+
+            // 2. Yoksa email al
+            String email = jwt.getClaim("email");
+            log.info("Getting company ID for email: {}", email);
+
+            // 3. User Service'e GET request at
+            String url = "http://localhost:9091/api/users/email/" + email;
+            UserResponse user = restTemplate.getForObject(url, UserResponse.class);
+
+            return user.getCompanyId();
+
+        } catch (Exception e) {
+            log.error("Error: {}", e.getMessage());
+            throw new RuntimeException("Error fetching company ID");
+        }
+    }
+    @lombok.Data
+    private static class UserResponse {
+        private String companyId;
+    }
 
     @Transactional
     public ProjectResponse createProject(CreateProjectRequest request) {
@@ -131,42 +224,45 @@ public class ProjectService {
         }
     }
 
-    // soft delete
+    // hard delete
+    @Transactional
     public void deleteProject(String projectId) {
         try {
             String companyId = securityUtils.getCurrentUserCompanyId();
             Project project = projectRepository.findByIdAndCompanyId(projectId, companyId)
                     .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
-            ProjectStatus oldStatus = project.getStatus();
-            project.setStatus(ProjectStatus.CANCELLED);
-            project.setUpdatedAt(LocalDateTime.now());
-            projectRepository.save(project);
 
-            // ✅ PROJECT DELETED EVENT
-            ProjectDeletedEvent event = ProjectDeletedEvent.builder()
-                    .projectId(project.getId())
-                    .companyId(project.getCompanyId())
-                    .projectName(project.getName())
-                    .reason("Project cancelled")
-                    .timestamp(LocalDateTime.now())
-                    .build();
+            String projectName = project.getName();
+            String projectCompanyId = project.getCompanyId();
 
-            kafkaTemplate.send("project.deleted", event);
+            projectRepository.delete(project);
+            projectRepository.flush(); // Ensure deletion is committed
 
-            // ✅ PROJECT STATUS CHANGED EVENT
-            ProjectStatusChangedEvent statusEvent = ProjectStatusChangedEvent.builder()
-                    .projectId(project.getId())
-                    .companyId(project.getCompanyId())
-                    .oldStatus(oldStatus)
-                    .newStatus(ProjectStatus.CANCELLED)
-                    .reason("Project cancelled")
-                    .timestamp(LocalDateTime.now())
-                    .build();
+            log.info("✅ Project {} permanently deleted from database", projectId);
 
-            kafkaTemplate.send("project.status.changed", statusEvent);
+            try {
+                ProjectDeletedEvent event = ProjectDeletedEvent.builder()
+                        .projectId(projectId)
+                        .companyId(projectCompanyId)
+                        .projectName(projectName)
+                        .reason("Project permanently deleted by user")
+                        .timestamp(LocalDateTime.now())
+                        .build();
+
+                kafkaTemplate.send("project.deleted", event);
+                log.info("✅ Project deletion event published successfully");
+            } catch (Exception kafkaEx) {
+                // Kafka hatası olsa bile proje silinmiş olsun
+                log.error("❌ Failed to publish deletion event but project deleted: {}",
+                        kafkaEx.getMessage(), kafkaEx);
+            }
 
         } catch (EntityNotFoundException e) {
+            log.error("Project not found: {}", projectId);
             throw e;
+        } catch (Exception e) {
+            log.error("Error deleting project {}: {}", projectId, e.getMessage(), e);
+            throw new RuntimeException("Error deleting project: " + e.getMessage(), e);
         }
     }
 
@@ -331,25 +427,32 @@ public class ProjectService {
         try {
             log.info("Fetching project detail: {}", projectId);
 
-            boolean isWorker = SecurityContextHolder.getContext()
-                    .getAuthentication()
-                    .getAuthorities()
-                    .stream()
-                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_WORKER"));
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+            // Rolleri kontrol et
+            boolean isWorker = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_WORKER"));
+
+            boolean isHomeowner = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_HOMEOWNER"));
 
             Project project;
 
-            if (isWorker) {
-                log.info("Worker role detected - skipping company check");
+            // ✅ WORKER veya HOMEOWNER için company kontrolü yok
+            if (isWorker || isHomeowner) {
+                log.info("🔓 {} role detected - skipping company check",
+                        isWorker ? "WORKER" : "HOMEOWNER");
+
                 project = projectRepository.findById(projectId)
                         .orElseThrow(() -> new EntityNotFoundException("Project not found: " + projectId));
-            } else {
-
+            }
+            // ✅ Diğer roller için company kontrolü yap
+            else {
                 String effectiveCompanyId = (companyId != null && !companyId.isBlank())
                         ? companyId
                         : securityUtils.getCurrentUserCompanyId();
 
-                log.info("Using companyId: {}", effectiveCompanyId);
+                log.info("🔒 Using companyId for security check: {}", effectiveCompanyId);
 
                 project = projectRepository.findByIdAndCompanyId(projectId, effectiveCompanyId)
                         .orElseThrow(() -> new EntityNotFoundException("Project not found or access denied"));
@@ -595,20 +698,33 @@ public class ProjectService {
             location.setPlaceId(locationInfo.getPlaceId());
         }
     }
-
     public List<ProjectMapResponse> getProjectsForMap() {
         try {
-            // ✅ Company bazlı filtreleme
             String companyId = securityUtils.getCurrentUserCompanyId();
             List<Project> projects = projectRepository.findByCompanyIdWithLocation(companyId);
-            return projectMapper.toProjectMapResponseList(projects);
+
+            return projects.stream()
+                    .map(project -> {
+                        ProjectMapResponse response = projectMapper.toProjectMapResponse(project);
+
+                        // ✅ Unit Service-dən unit məlumatlarını çək
+                        try {
+                            List<UnitMapInfo> units = unitClient.getProjectUnitsForMap(project.getId());
+                            response.setUnits(units);
+                            log.info("✅ Loaded {} units for project {}", units.size(), project.getId());
+                        } catch (Exception e) {
+                            log.error("❌ Failed to load units for project {}: {}", project.getId(), e.getMessage());
+                            response.setUnits(new ArrayList<>());
+                        }
+
+                        return response;
+                    })
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("Error fetching projects for map", e);
             throw new RuntimeException("Error fetching projects for map", e);
         }
     }
-
-
 
     public ProjectProgressResponse getProjectProgress(String projectId) {
         try {
@@ -802,6 +918,13 @@ public class ProjectService {
         if (location == null) {
             location = new Project.ProjectLocation();
             project.setLocation(location);
+        }
+
+        if (updateProjectRequest.getStatus() != null) {
+            project.setStatus(updateProjectRequest.getStatus());
+        }
+        if (updateProjectRequest.getType() != null) {
+            project.setType(updateProjectRequest.getType());
         }
 
         if (updateProjectRequest.getName() != null) {

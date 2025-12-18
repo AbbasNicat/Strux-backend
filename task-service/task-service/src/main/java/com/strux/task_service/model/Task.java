@@ -42,6 +42,8 @@ public class Task {
     @Enumerated(EnumType.STRING)
     private TaskPriority priority;
 
+    private String unitId;
+
     @Enumerated(EnumType.STRING)
     private TaskType type;
 

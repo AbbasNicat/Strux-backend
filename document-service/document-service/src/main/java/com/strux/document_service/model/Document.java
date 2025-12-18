@@ -28,6 +28,9 @@ public class Document {
     private String originalFileName;
 
     @Indexed
+    private String folderId;
+
+    @Indexed
     private String filePath;
 
     private String bucketName;

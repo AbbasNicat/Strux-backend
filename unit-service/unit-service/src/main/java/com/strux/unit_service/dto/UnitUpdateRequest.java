@@ -1,5 +1,7 @@
 package com.strux.unit_service.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.strux.unit_service.config.LocalDateTimeDeserializer;
 import com.strux.unit_service.enums.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -19,6 +21,8 @@ public class UnitUpdateRequest {
     private String unitNumber;
     private String unitName;
     private String description;
+    private String footprintJson;
+
 
     private String buildingId;
     private String blockName;
@@ -56,14 +60,34 @@ public class UnitUpdateRequest {
     private Boolean hasTerrace;
     private BigDecimal terraceArea;
 
+    // ========== FLOOR PLAN UPDATE ==========
+    private String floorPlanJson;  // ✅ Fabric.js canvas JSON
+    private String floorPlanImageUrl;  // ✅ PNG export URL
+
+    @DecimalMin(value = "0.1")
+    private BigDecimal floorPlanWidth;  // ✅ Width in meters
+
+    @DecimalMin(value = "0.1")
+    private BigDecimal floorPlanLength;  // ✅ Length in meters
+
+    @DecimalMin(value = "0.1")
+    private BigDecimal ceilingHeight;  // ✅ Height in meters
+
     private UnitStatus status;
     private ConstructionPhase currentPhase;
 
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime constructionStartDate;
+
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime estimatedCompletionDate;
+
+    @JsonDeserialize(using = LocalDateTimeDeserializer.class)
     private LocalDateTime actualCompletionDate;
 
     private SaleStatus saleStatus;
+
+    private Integer completionPercentage;
 
     private BigDecimal listPrice;
     private BigDecimal salePrice;

@@ -10,7 +10,9 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "worker_profiles")
@@ -70,4 +72,12 @@ public class WorkerProfile {
     @Column(name = "active_project_ids")
     @Builder.Default
     private List<String> activeProjectIds = new ArrayList<>();
+
+    // ✅ YENİ: Unit atamaları için
+    @ElementCollection
+    @CollectionTable(name = "worker_assigned_units",
+            joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "unit_id")
+    @Builder.Default
+    private Set<String> assignedUnitIds = new HashSet<>();
 }

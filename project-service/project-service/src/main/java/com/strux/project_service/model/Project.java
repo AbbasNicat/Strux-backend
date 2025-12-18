@@ -1,5 +1,6 @@
 package com.strux.project_service.model;
 
+import com.strux.project_service.dto.CoordinateDTO;
 import com.strux.project_service.enums.ProjectStatus;
 import com.strux.project_service.enums.ProjectType;
 import jakarta.persistence.*;
@@ -39,10 +40,18 @@ public class Project {
     private LocalDate startDate;
     private LocalDate plannedEndDate;
     private LocalDate actualEndDate;
-
     private LocalDate estimatedEndDate;
+
     private Double totalBudget;
     private Double spentBudget;
+
+
+    private Integer completionPercentage;
+    @Transient
+    public Integer getCompletionPercentage() {
+        if (overallProgress == null) return 0;
+        return overallProgress.intValue();
+    }
 
     private Integer totalUnits; // toplam konut
 
@@ -57,6 +66,7 @@ public class Project {
 
     private String imageUrl;
 
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -67,6 +77,7 @@ public class Project {
     public static class ProjectLocation {
         private Double latitude;
         private Double longitude;
+
 
         private String address;
         private String city;

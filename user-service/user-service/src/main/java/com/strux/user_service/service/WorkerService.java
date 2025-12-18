@@ -6,7 +6,9 @@ import com.strux.user_service.enums.UserRole;
 import com.strux.user_service.enums.UserStatus;
 import com.strux.user_service.enums.WorkerSpecialty;
 import com.strux.user_service.event.WorkerAssignedToProjectEvent;
+import com.strux.user_service.event.WorkerAssignedToUnitEvent;
 import com.strux.user_service.event.WorkerRemovedFromCompanyEvent;
+import com.strux.user_service.event.WorkerRemovedFromUnitEvent;
 import com.strux.user_service.exceptions.InvalidInputException;
 import com.strux.user_service.exceptions.UserNotFoundException;
 import com.strux.user_service.exceptions.UserServiceException;
@@ -16,7 +18,8 @@ import com.strux.user_service.model.WorkerProfile;
 import com.strux.user_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -33,9 +36,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -46,9 +48,371 @@ public class WorkerService {
     private final UserMapper userMapper;
     private final AuditLogService auditLogService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
-
-
     private final WebClient.Builder webClientBuilder;
+
+    @Value("${services.unit.url:http://localhost:9099}")
+    private String unitServiceUrl;
+
+    @Value("${services.project.url:http://localhost:9095}")
+    private String projectServiceUrl;
+
+    // ✅ Worker'ın tüm unit ID'lerini getir
+    public List<String> getWorkerUnitIds(String workerId) {
+        log.debug("Fetching unit IDs for worker: {}", workerId);
+
+        User worker = userRepository.findById(workerId)
+                .orElseThrow(() -> new UserNotFoundException("Worker not found: " + workerId));
+
+        validateWorker(worker);
+
+        WorkerProfile profile = worker.getWorkerProfile();
+        if (profile == null || profile.getAssignedUnitIds() == null) {
+            return new ArrayList<>();
+        }
+
+        return new ArrayList<>(profile.getAssignedUnitIds());
+    }
+
+    // ✅ Worker'ın ilk unit ID'sini getir (tek unit için)
+    public String getWorkerFirstUnitId(String workerId) {
+        log.debug("Fetching first unit ID for worker: {}", workerId);
+
+        List<String> unitIds = getWorkerUnitIds(workerId);
+
+        return unitIds.isEmpty() ? null : unitIds.get(0);
+    }
+
+    public Long countWorkersByCompany(String companyId) {
+        log.info("📊 Counting workers for company: {}", companyId);
+
+        Long count = userRepository.countByCompanyIdAndRole(companyId, UserRole.WORKER);
+
+        log.info("✅ Company {} has {} workers", companyId, count);
+        return count;
+    }
+
+    public Long countWorkersByProject(String projectId) {
+        try {
+            log.info("📊 Counting workers for project {}", projectId);
+
+            // ✅ user_active_project_ids tablosundan direkt say
+            Long count = userRepository.countWorkersByProjectId(projectId);
+
+            log.info("✅ Total workers assigned to project {} = {}", projectId, count);
+            return count;
+
+        } catch (Exception e) {
+            log.error("❌ Error counting workers for project {}: {}",
+                    projectId, e.getMessage(), e);
+            return 0L;
+        }
+    }
+
+    @Transactional
+    public UserResponse assignWorkerToUnit(UUID workerId, String unitId, String assignedBy) {
+        try {
+            log.info("Assigning worker {} to unit {}", workerId, unitId);
+
+            User worker = userRepository.findById(workerId.toString())
+                    .orElseThrow(() -> new UserNotFoundException("Worker not found: " + workerId));
+
+            validateWorker(worker);
+
+            WorkerProfile profile = worker.getWorkerProfile();
+            if (profile == null) {
+                throw new InvalidInputException("Worker profile not found");
+            }
+
+            if (profile.getAssignedUnitIds().contains(unitId)) {
+                log.warn("Worker {} already assigned to unit {}", workerId, unitId);
+                return userMapper.toResponse(worker);
+            }
+
+            profile.getAssignedUnitIds().add(unitId);
+            worker.setUpdatedAt(LocalDateTime.now());
+
+            User savedWorker = userRepository.save(worker);
+
+            String unitName = getUnitName(unitId);
+            String assignerName = getUserFullName(assignedBy);
+
+            auditLogService.logUserEvent(
+                    AuditEvent.USER_UPDATED,
+                    worker.getId(),
+                    assignedBy,
+                    String.format("Worker assigned to unit: %s by %s",
+                            unitName != null ? unitName : unitId,
+                            assignerName != null ? assignerName : assignedBy)
+            );
+
+            publishWorkerAssignedToUnitEvent(savedWorker, unitId, assignedBy);
+
+            log.info("✅ Worker {} assigned to unit {}", workerId, unitId);
+            return userMapper.toResponse(savedWorker);
+
+        } catch (UserNotFoundException | InvalidInputException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error assigning worker to unit: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to assign worker to unit", e);
+        }
+    }
+
+    @Transactional
+    public UserResponse removeWorkerFromUnit(UUID workerId, String unitId, String removedBy) {
+        try {
+            log.info("Removing worker {} from unit {}", workerId, unitId);
+
+            User worker = userRepository.findById(workerId.toString())
+                    .orElseThrow(() -> new UserNotFoundException("Worker not found: " + workerId));
+
+            validateWorker(worker);
+
+            WorkerProfile profile = worker.getWorkerProfile();
+            if (profile == null) {
+                throw new InvalidInputException("Worker profile not found");
+            }
+
+            if (!profile.getAssignedUnitIds().contains(unitId)) {
+                log.warn("Worker {} not assigned to unit {}", workerId, unitId);
+                return userMapper.toResponse(worker);
+            }
+
+            String unitName = getUnitName(unitId);
+            String removerName = getUserFullName(removedBy);
+
+            profile.getAssignedUnitIds().remove(unitId);
+            worker.setUpdatedAt(LocalDateTime.now());
+
+            User savedWorker = userRepository.save(worker);
+
+            auditLogService.logUserEvent(
+                    AuditEvent.USER_UPDATED,
+                    worker.getId(),
+                    removedBy,
+                    String.format("Worker removed from unit: %s by %s",
+                            unitName != null ? unitName : unitId,
+                            removerName != null ? removerName : removedBy)
+            );
+
+            publishWorkerRemovedFromUnitEvent(savedWorker, unitId, removedBy);
+
+            log.info("✅ Worker {} removed from unit {}", workerId, unitId);
+            return userMapper.toResponse(savedWorker);
+
+        } catch (UserNotFoundException | InvalidInputException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error removing worker from unit: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to remove worker from unit", e);
+        }
+    }
+
+    // ✅ Enhanced: Publish ASSIGN event with names
+    private void publishWorkerAssignedToUnitEvent(User worker, String unitId, String assignedBy) {
+        try {
+            String workerName = worker.getFirstName() + " " + worker.getLastName();
+            String unitName = getUnitName(unitId);
+            String assignerName = getUserFullName(assignedBy);
+            String projectId = getProjectIdFromUnit(unitId);
+
+            WorkerAssignedToUnitEvent event = WorkerAssignedToUnitEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .timestamp(java.time.OffsetDateTime.now().toString())
+                    .workerId(worker.getId())
+                    .workerName(workerName)
+                    .unitId(unitId)
+                    .unitName(unitName != null ? unitName : "Unit " + unitId)
+                    .companyId(worker.getCompanyId())
+                    .assignedBy(assignedBy)
+                    .assignerName(assignerName != null ? assignerName : null)
+                    .projectId(projectId)
+                    .build();
+
+            kafkaTemplate.send("worker.assigned.to.unit", event);
+            log.info("✅ Published worker.assigned.to.unit event: worker={} ({}), unit={} ({}), assigner={} ({})",
+                    worker.getId(), workerName, unitId, unitName, assignedBy, assignerName);
+
+        } catch (Exception e) {
+            log.warn("Failed to publish worker.assigned.to.unit event: {}", e.getMessage());
+        }
+    }
+
+    private void publishWorkerRemovedFromUnitEvent(User worker, String unitId, String removedBy) {
+        try {
+            String workerName = worker.getFirstName() + " " + worker.getLastName();
+            String unitName = getUnitName(unitId);
+            String removerName = getUserFullName(removedBy);
+
+            WorkerRemovedFromUnitEvent event = WorkerRemovedFromUnitEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .timestamp(java.time.OffsetDateTime.now().toString())
+                    .workerId(worker.getId())
+                    .workerName(workerName)
+                    .unitId(unitId)
+                    .unitName(unitName != null ? unitName : "Unit " + unitId)
+                    .companyId(worker.getCompanyId())
+                    .removedBy(removedBy)
+                    .removerName(removerName != null ? removerName : null)
+                    .reason("Removed from unit")
+                    .build();
+
+            kafkaTemplate.send("worker.removed.from.unit", event);
+            log.info("✅ Published worker.removed.from.unit event: worker={} ({}), unit={} ({}), remover={} ({})",
+                    worker.getId(), workerName, unitId, unitName, removedBy, removerName);
+
+        } catch (Exception e) {
+            log.warn("Failed to publish worker.removed.from.unit event: {}", e.getMessage());
+        }
+    }
+
+    // ✅ Helper: Get user full name by ID
+    private String getUserFullName(String userIdOrKeycloakId) {
+        try {
+            if (userIdOrKeycloakId == null || userIdOrKeycloakId.isBlank()) {
+                log.warn("getUserFullName called with null/blank ID");
+                return null;
+            }
+
+            log.debug("Looking up user by ID: {}", userIdOrKeycloakId);
+
+            // Try by User ID first
+            Optional<User> userOpt = userRepository.findById(userIdOrKeycloakId);
+
+            // If not found, try by Keycloak ID
+            if (userOpt.isEmpty()) {
+                log.debug("Not found by User ID, trying Keycloak ID...");
+                userOpt = userRepository.findByKeycloakId(userIdOrKeycloakId);
+            }
+
+            if (userOpt.isEmpty()) {
+                log.warn("❌ User NOT FOUND by User ID or Keycloak ID: {}", userIdOrKeycloakId);
+                return null;
+            }
+
+            User user = userOpt.get();
+            String fullName = user.getFirstName() + " " + user.getLastName();
+
+            log.debug("✅ User found: {} (ID: {}, Keycloak: {})",
+                    fullName, user.getId(), user.getKeycloakId());
+            return fullName;
+
+        } catch (Exception e) {
+            log.error("❌ Error getting user full name for {}: {}", userIdOrKeycloakId, e.getMessage());
+            return null;
+        }
+    }
+
+
+    // ✅ Helper: Get unit name with fallback
+    private String getUnitName(String unitId) {
+        try {
+            log.debug("Fetching unit name for ID: {}", unitId);
+
+            String token = getAuthToken();
+            if (token == null) {
+                log.warn("❌ No auth token available for unit lookup");
+                return null;
+            }
+
+            // ✅ unitServiceUrl (9099) kullanılıyor
+            String unitName = webClientBuilder.build()
+                    .get()
+                    .uri(unitServiceUrl + "/api/units/{unitId}/name", unitId)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            log.debug("✅ Unit name: {}", unitName);
+            return unitName;
+
+        } catch (org.springframework.web.reactive.function.client.WebClientResponseException e) {
+            log.error("❌ Unit Service error for {}: {} - {}",
+                    unitId, e.getStatusCode(), e.getMessage());
+
+            if (e.getStatusCode().value() == 404) {
+                log.error("   → Unit not found: {}", unitId);
+            } else if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                log.error("   → Auth failed - check JWT token");
+            }
+            return null;
+
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch unit name for {}: {}", unitId, e.getMessage());
+
+            if (e.getCause() != null && e.getCause().getMessage() != null) {
+                if (e.getCause().getMessage().contains("Connection refused")) {
+                    log.error("   → Unit Service not running at: {}", unitServiceUrl);
+                }
+            }
+            return null;
+        }
+    }
+
+    private String getProjectIdFromUnit(String unitId) {
+        try {
+            String token = getAuthToken();
+            if (token == null) return null;
+
+            // ✅ unitServiceUrl (9099) kullanılıyor
+            return webClientBuilder.build()
+                    .get()
+                    .uri(unitServiceUrl + "/api/units/{unitId}/project-id", unitId)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+        } catch (Exception e) {
+            log.warn("Failed to fetch project ID for unit {}: {}", unitId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Set<String> getWorkerUnits(UUID workerId) {
+        try {
+            log.info("Fetching units for worker {}", workerId);
+
+            User worker = userRepository.findById(workerId.toString())
+                    .orElseThrow(() -> new UserNotFoundException("Worker not found: " + workerId));
+
+            validateWorker(worker);
+
+            WorkerProfile profile = worker.getWorkerProfile();
+            if (profile == null || profile.getAssignedUnitIds() == null) {
+                return new HashSet<>();
+            }
+
+            return profile.getAssignedUnitIds();
+
+        } catch (UserNotFoundException | InvalidInputException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error fetching worker units: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to fetch worker units", e);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponse> getWorkersByUnit(String unitId) {
+        try {
+            log.info("Fetching workers for unit {}", unitId);
+
+            List<User> workers = userRepository.findWorkersByUnitId(unitId, UserStatus.ACTIVE);
+
+            log.info("Found {} workers for unit {}", workers.size(), unitId);
+
+            return workers.stream()
+                    .map(userMapper::toResponse)
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error fetching unit workers: {}", e.getMessage(), e);
+            throw new UserServiceException("Failed to fetch unit workers", e);
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<ProjectResponse> getWorkerProjects(String workerId) {
@@ -68,7 +432,6 @@ public class WorkerService {
                 return List.of();
             }
 
-            // ✅ FIX: SecurityContext'ten token al
             String token = getAuthToken();
 
             List<String> projectIds = profile.getActiveProjectIds();
@@ -79,7 +442,7 @@ public class WorkerService {
                     ProjectResponse project = webClientBuilder.build()
                             .get()
                             .uri("http://localhost:9095/api/projects/{projectId}", projectId)
-                            .header("Authorization", "Bearer " + token) // ✅ Token ekle
+                            .header("Authorization", "Bearer " + token)
                             .retrieve()
                             .bodyToMono(ProjectResponse.class)
                             .block();
@@ -103,13 +466,11 @@ public class WorkerService {
         }
     }
 
-
     @Transactional
     public void removeEmployeeFromCompany(String companyId, String userId, String removedBy) {
         try {
             log.info("Removing employee {} from company {}", userId, companyId);
 
-            // 1. Verify user exists and belongs to this company
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
@@ -117,26 +478,26 @@ public class WorkerService {
                 throw new InvalidInputException("User does not belong to this company");
             }
 
-            // 2. If user is a worker, remove from all projects
             if (user.getRole() == UserRole.WORKER && user.getWorkerProfile() != null) {
                 WorkerProfile workerProfile = user.getWorkerProfile();
 
-                // Remove from all projects
                 if (workerProfile.getActiveProjectIds() != null && !workerProfile.getActiveProjectIds().isEmpty()) {
                     log.info("Removing worker from {} projects", workerProfile.getActiveProjectIds().size());
                     workerProfile.getActiveProjectIds().clear();
                     workerProfile.setIsAvailable(true);
                 }
+
+                // ✅ Unit atamalarını da temizle
+                if (workerProfile.getAssignedUnitIds() != null) {
+                    workerProfile.getAssignedUnitIds().clear();
+                }
             }
 
-            // 3. Remove company association
             user.setCompanyId(null);
             user.setUpdatedAt(LocalDateTime.now());
 
-            // 4. Save changes
             userRepository.save(user);
 
-            // 5. Log audit event
             auditLogService.logUserEvent(
                     AuditEvent.USER_UPDATED,
                     user.getId(),
@@ -144,7 +505,6 @@ public class WorkerService {
                     "Employee removed from company: " + companyId
             );
 
-            // 6. 🆕 Publish Kafka event
             publishWorkerRemovedFromCompanyEvent(companyId, userId, removedBy);
 
             log.info("✅ Successfully removed employee {} from company {}", userId, companyId);
@@ -173,20 +533,30 @@ public class WorkerService {
 
         } catch (Exception e) {
             log.warn("Failed to publish worker.removed event: {}", e.getMessage());
-
         }
     }
 
     private String getAuthToken() {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-                return jwt.getTokenValue();
+
+            if (authentication == null) {
+                log.warn("❌ No authentication in SecurityContext");
+                return null;
             }
-            log.warn("No JWT token found in SecurityContext");
-            return null;
+
+            if (!(authentication.getPrincipal() instanceof Jwt)) {
+                log.warn("❌ Principal is not JWT: {}",
+                        authentication.getPrincipal().getClass().getSimpleName());
+                return null;
+            }
+
+            Jwt jwt = (Jwt) authentication.getPrincipal();
+            log.debug("✅ JWT token retrieved");
+            return jwt.getTokenValue();
+
         } catch (Exception e) {
-            log.error("Error getting auth token: {}", e.getMessage());
+            log.error("❌ Error getting auth token: {}", e.getMessage());
             return null;
         }
     }
@@ -205,14 +575,13 @@ public class WorkerService {
 
             validateSearchParameters(minRating);
 
-            // Native query enum'ları String olarak bekliyor
             Page<User> workers = userRepository.searchWorkers(
-                    specialty != null ? specialty.name() : null,  // Enum'u String'e çevir
+                    specialty != null ? specialty.name() : null,
                     city,
                     isAvailable,
                     minRating != null ? minRating : BigDecimal.ZERO,
-                    UserRole.WORKER.name(),    // Enum'u String'e çevir
-                    UserStatus.ACTIVE.name(),  // Enum'u String'e çevir
+                    UserRole.WORKER.name(),
+                    UserStatus.ACTIVE.name(),
                     pageable
             );
 
@@ -227,7 +596,6 @@ public class WorkerService {
             throw new UserServiceException("Failed to search workers", e);
         }
     }
-
 
     @Transactional(readOnly = true)
     public Page<UserResponse> getCompanyWorkers(String companyId, Pageable pageable) {
@@ -256,7 +624,6 @@ public class WorkerService {
             throw new UserServiceException("Failed to fetch company workers", e);
         }
     }
-
 
     @Transactional(readOnly = true)
     public Page<UserResponse> getAllCompanyEmployees(String companyId, Pageable pageable) {
@@ -328,7 +695,6 @@ public class WorkerService {
         }
     }
 
-
     @Transactional
     public void updateWorkerPerformance(
             UUID workerId,
@@ -358,9 +724,7 @@ public class WorkerService {
             profile.setCompletedTasks(completedTasks);
 
             updateAverageRating(profile, taskRating, completedTasks);
-
             updateCompletionCounts(profile, onTime);
-
             updateReliabilityScore(profile);
 
             Integer totalWorkDays = profile.getTotalWorkDays() != null
@@ -403,19 +767,16 @@ public class WorkerService {
                 throw new InvalidInputException("Worker profile not found");
             }
 
-            // ✅ Aktive proje listesi yoksa başlat
             if (profile.getActiveProjectIds() == null) {
                 profile.setActiveProjectIds(new ArrayList<>());
             }
 
-            // ✅ Zaten kayıtlı değilse ekle
             if (!profile.getActiveProjectIds().contains(projectId)) {
                 profile.getActiveProjectIds().add(projectId);
             }
 
             worker.setIsAvailable(false);
 
-            // ✅ Company ID set et (projenin bağlı olduğu şirketi alıyoruz)
             String companyId = getCompanyIdFromProject(projectId);
             worker.setCompanyId(companyId);
 
@@ -450,7 +811,6 @@ public class WorkerService {
                 .block();
     }
 
-
     @Transactional
     public void removeWorkerFromProject(UUID workerId, String projectId, String updatedBy) {
         try {
@@ -465,10 +825,9 @@ public class WorkerService {
             if (profile != null && profile.getActiveProjectIds() != null) {
                 profile.getActiveProjectIds().remove(projectId);
 
-                // ✅ Eğer çalışanın başka projesi yoksa tekrar available olsun
                 if (profile.getActiveProjectIds().isEmpty()) {
                     worker.setIsAvailable(true);
-                    worker.setCompanyId(null); // 👈 Şirketten ayrılıyor
+                    worker.setCompanyId(null);
                 }
             }
 
@@ -493,7 +852,6 @@ public class WorkerService {
 
     private void publishWorkerAssignedEvent(User worker, String projectId, String issuedBy) {
         try {
-
             String token = getAuthToken();
             String companyId = webClientBuilder.build()
                     .get()
@@ -511,7 +869,7 @@ public class WorkerService {
             WorkerAssignedToProjectEvent evt = WorkerAssignedToProjectEvent.builder()
                     .eventId(UUID.randomUUID().toString())
                     .timestamp(java.time.OffsetDateTime.now().toString())
-                    .companyId(companyId)   // ✅ artık null değil
+                    .companyId(companyId)
                     .projectId(projectId)
                     .userId(worker.getId())
                     .position("Worker")
@@ -527,6 +885,7 @@ public class WorkerService {
             log.warn("Failed to publish worker.assigned: {}", e.getMessage());
         }
     }
+
     @Transactional(readOnly = true)
     public List<UserResponse> getTopWorkersBySpecialty(WorkerSpecialty specialty, int limit) {
         try {
@@ -588,7 +947,6 @@ public class WorkerService {
         }
     }
 
-
     @Transactional(readOnly = true)
     public Page<UserResponse> getAvailableWorkers(
             String city,
@@ -612,7 +970,6 @@ public class WorkerService {
             throw new UserServiceException("Failed to fetch available workers", e);
         }
     }
-
 
     private void validateWorker(User worker) {
         if (worker.getRole() != UserRole.WORKER) {
@@ -658,7 +1015,6 @@ public class WorkerService {
         }
     }
 
-
     private void updateReliabilityScore(WorkerProfile profile) {
         Integer onTimeCount = profile.getOnTimeCompletionCount() != null
                 ? profile.getOnTimeCompletionCount()
@@ -680,7 +1036,6 @@ public class WorkerService {
             profile.setReliabilityScore(BigDecimal.valueOf(100));
         }
     }
-
 
     private void validateSearchParameters(BigDecimal minRating) {
         if (minRating != null) {

@@ -65,74 +65,47 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // ============================================
-                        // PUBLIC ENDPOINTS - Herkes Erişebilir
+                        // PUBLIC ENDPOINTS - EN BAŞTA OLMALI
                         // ============================================
 
                         // Health checks
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/health/**").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // Location search - Google Maps API (authentication gerekmez)
-                        .requestMatchers(HttpMethod.GET, "/api/locations/search").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/locations/details/**").permitAll()
+                        // ✅ TÜM Location search endpoints - ÖNCE BUNLAR
+                        .requestMatchers("/api/locations/search").permitAll()
+                        .requestMatchers("/api/locations/details/**").permitAll()
+                        .requestMatchers("/api/locations/reverse-geocode").permitAll() // ✅ EN SPESIFIK OLANI EN ÜSTTE
 
                         // ============================================
-                        // AUTHENTICATED - Tüm Kullanıcılar (Company Bazlı Filtreleme)
+                        // AUTHENTICATED - Location endpoints
                         // ============================================
-
-                        // Location endpoints - Artık authentication gerekli (company bazlı)
-                        .requestMatchers(HttpMethod.GET, "/api/locations/markers")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/locations/nearby")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/locations/projects/*/map-details")
-                        .authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/locations/markers").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/locations/nearby").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/locations/projects/*/map-details").authenticated()
 
                         // Project endpoints - Read (company bazlı)
-                        .requestMatchers(HttpMethod.GET, "/api/projects")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/projects/*")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/projects/*/progress")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/projects/map")
-                        .authenticated()
-
-                        .requestMatchers(HttpMethod.GET, "/api/projects/company/*")
-                        .authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects/*").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects/*/progress").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects/map").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects/company/*").authenticated()
 
                         // ============================================
                         // COMPANY_ADMIN - Şirket Yöneticisi
                         // ============================================
-
-                        // Project CRUD
-                        .requestMatchers(HttpMethod.POST, "/api/projects")
-                        .hasRole("COMPANY_ADMIN")
-
-                        .requestMatchers(HttpMethod.PUT, "/api/projects/*")
-                        .hasRole("COMPANY_ADMIN")
-
-                        .requestMatchers(HttpMethod.PATCH, "/api/projects/*")
-                        .hasRole("COMPANY_ADMIN")
-
-                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*")
-                        .hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/projects").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/projects/*").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/projects/*").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*").hasRole("COMPANY_ADMIN")
 
                         // Location management
-                        .requestMatchers(HttpMethod.POST, "/api/locations/projects/*")
-                        .hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/locations/projects/*").hasRole("COMPANY_ADMIN")
 
                         // Phase management
-                        .requestMatchers(HttpMethod.POST, "/api/projects/*/phases")
-                        .hasRole("COMPANY_ADMIN")
-
-                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*/phases/*")
-                        .hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/projects/*/phases").hasRole("COMPANY_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/projects/*/phases/*").hasRole("COMPANY_ADMIN")
 
                         // ============================================
                         // WORKER & COMPANY_ADMIN - Progress Update
@@ -143,8 +116,7 @@ public class SecurityConfig {
                         // ============================================
                         // AUTHENTICATED - Filtering
                         // ============================================
-                        .requestMatchers(HttpMethod.POST, "/api/locations/filter")
-                        .authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/locations/filter").authenticated()
 
                         // Diğer tüm istekler authentication gerektirir
                         .anyRequest().authenticated()

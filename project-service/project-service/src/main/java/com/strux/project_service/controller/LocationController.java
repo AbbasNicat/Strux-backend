@@ -22,6 +22,20 @@ public class LocationController {
 
     private final LocationService locationService;
 
+    @GetMapping("/reverse-geocode")
+    public ResponseEntity<LocationDetailDTO> reverseGeocode(
+            @RequestParam Double lat,
+            @RequestParam Double lng) {
+        log.info("Reverse geocoding: {}, {}", lat, lng);
+        try {
+            LocationDetailDTO details = locationService.reverseGeocode(lat, lng);
+            return ResponseEntity.ok(details);
+        } catch (Exception e) {
+            log.error("Error in reverse geocoding", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
     @GetMapping("/search")
     public ResponseEntity<List<LocationSuggestionDTO>> searchLocation(
             @RequestParam String query) {

@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public class DocumentApprovedEvent {
     private String eventType = "DOCUMENT_APPROVED";
     private String documentId;
+    private String folderId;
     private String taskId;
     private String approvedBy;
     private String approvalStatus;

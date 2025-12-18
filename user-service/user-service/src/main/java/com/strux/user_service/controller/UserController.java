@@ -20,13 +20,21 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("api/users")
+@RequestMapping("/api/users")
 @RequiredArgsConstructor
 @Slf4j
 public class UserController {
 
     private final UserService userService;
 
+    @GetMapping("/all")
+    public ResponseEntity<Page<UserResponse>> getAllUsers(
+            @RequestParam(required = false) String role,
+            Pageable pageable) {
+        log.info("GET /api/users/all - role: {}", role);
+        Page<UserResponse> users = userService.getAllUsers(role, pageable);
+        return ResponseEntity.ok(users);
+    }
 
     @GetMapping("/{userId}")
     public ResponseEntity<UserResponse> getUserById(@PathVariable UUID userId) {

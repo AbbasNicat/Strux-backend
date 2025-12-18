@@ -26,11 +26,52 @@ public class EnhancedDocumentController {
 
     @PostMapping(value = "/progress/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentDto> uploadProgressDocument(
-            @RequestPart("file") MultipartFile file,
-            @RequestPart("request") EnhancedDocumentUploadRequest request,
-            @RequestHeader("X-User-Id") String userId
+            @RequestPart("file") MultipartFile file,  // ✅ @RequestPart
+            @RequestParam("companyId") String companyId,
+            @RequestParam("entityType") String entityType,  // ✅ String kimi qəbul et
+            @RequestParam("entityId") String entityId,
+            @RequestParam(value = "documentType", required = false) String documentType,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "taskId", required = false) String taskId,
+            @RequestParam(value = "phaseId", required = false) String phaseId,
+            @RequestParam(value = "workerId", required = false) String workerId,
+            @RequestParam(value = "comments", required = false) String comments,
+            @RequestParam(value = "comparisonType", required = false) String comparisonType,
+            @RequestParam(value = "completionPercentage", required = false) Integer completionPercentage,
+            @RequestParam(value = "requiresApproval", required = false) Boolean requiresApproval,
+            @RequestHeader(value = "X-User-Id", required = false) String userId
     ) {
-        log.info("Uploading progress document for task: {}", request.getTaskId());
+        log.info("📥 Uploading progress document");
+        log.info("📥 File: {}", file.getOriginalFilename());
+        log.info("📥 File size: {}", file.getSize());
+        log.info("📥 Content type: {}", file.getContentType());
+        log.info("📥 Company ID: {}", companyId);
+        log.info("📥 Entity Type: {}", entityType);
+        log.info("📥 Task ID: {}", taskId);
+        log.info("📥 User ID: {}", userId);
+
+        // Enum conversion
+        EntityType entityTypeEnum = EntityType.valueOf(entityType);
+        DocumentType docTypeEnum = documentType != null ? DocumentType.valueOf(documentType) : null;
+        DocumentCategory categoryEnum = category != null ? DocumentCategory.valueOf(category) : null;
+
+        // Build request object
+        EnhancedDocumentUploadRequest request = new EnhancedDocumentUploadRequest();
+        request.setCompanyId(companyId);
+        request.setEntityType(entityTypeEnum);
+        request.setEntityId(entityId);
+        request.setDocumentType(docTypeEnum);
+        request.setCategory(categoryEnum);
+        request.setDescription(description);
+        request.setTaskId(taskId);
+        request.setPhaseId(phaseId);
+        request.setWorkerId(workerId);
+        request.setComments(comments);
+        request.setComparisonType(comparisonType);
+        request.setCompletionPercentage(completionPercentage);
+        request.setRequiresApproval(requiresApproval);
+
         DocumentDto document = documentService.uploadProgressDocument(file, request, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(document);
     }

@@ -1,12 +1,13 @@
 package com.strux.document_service.service;
 
-
 import com.strux.document_service.dto.*;
 import com.strux.document_service.enums.*;
 import com.strux.document_service.event.DocumentApprovedEvent;
 import com.strux.document_service.event.ProgressDocumentUploadedEvent;
 import com.strux.document_service.model.Document;
+import com.strux.document_service.model.Folder;
 import com.strux.document_service.repository.DocumentRepository;
+import com.strux.document_service.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 public class EnhancedDocumentService {
 
     private final DocumentRepository documentRepository;
+    private final FolderRepository folderRepository;
     private final MinioStorageService storageService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -37,8 +39,22 @@ public class EnhancedDocumentService {
             // Validate file
             validateFile(file);
 
-            // Generate folder path
-            String folder = generateEnhancedFolderPath(request);
+            // Folder kontrolü ve path oluşturma
+            String folder;
+            if (request.getFolderId() != null) {
+                Folder targetFolder = folderRepository.findByIdAndIsDeletedFalse(request.getFolderId())
+                        .orElseThrow(() -> new RuntimeException("Folder not found"));
+
+                // MinIO path: folder'ın path'i + task bilgisi
+                folder = targetFolder.getFolderPath().substring(1);
+                if (request.getTaskId() != null) {
+                    folder += "/task-" + request.getTaskId();
+                }
+                folder += "/" + (request.getCategory() != null ? request.getCategory().name().toLowerCase() : "general");
+            } else {
+                // Eski sistem
+                folder = generateEnhancedFolderPath(request);
+            }
 
             // Upload to MinIO
             String filePath = storageService.uploadFile(file, folder);
@@ -62,6 +78,7 @@ public class EnhancedDocumentService {
                     .companyId(request.getCompanyId())
                     .isPublic(request.getIsPublic() != null ? request.getIsPublic() : false)
                     .status(DocumentStatus.ACTIVE)
+                    .folderId(request.getFolderId())
                     // Enhanced fields
                     .taskId(request.getTaskId())
                     .phaseId(request.getPhaseId())
@@ -189,6 +206,18 @@ public class EnhancedDocumentService {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, List<DocumentDto>> getDocumentsByPhaseGroupedByFolder(String phaseId) {
+        log.info("Fetching documents for phase: {} grouped by folder", phaseId);
+
+        List<Document> phaseDocuments = documentRepository.findByPhaseId(phaseId);
+
+        return phaseDocuments.stream()
+                .collect(Collectors.groupingBy(
+                        doc -> doc.getFolderId() != null ? doc.getFolderId() : "root",
+                        Collectors.mapping(this::toDto, Collectors.toList())
+                ));
+    }
+
     // ==================== APPROVAL WORKFLOW ====================
 
     public List<DocumentDto> getPendingApprovals(String companyId) {
@@ -301,6 +330,12 @@ public class EnhancedDocumentService {
                 .filter(doc -> doc.getCategory() != null)
                 .collect(Collectors.groupingBy(Document::getCategory, Collectors.counting()));
         stats.put("documentsByCategory", byCategory);
+
+        // By folder
+        Map<String, Long> byFolder = projectDocuments.stream()
+                .filter(doc -> doc.getFolderId() != null)
+                .collect(Collectors.groupingBy(Document::getFolderId, Collectors.counting()));
+        stats.put("documentsByFolder", byFolder);
 
         // Pending approvals
         long pendingApprovals = projectDocuments.stream()
@@ -514,7 +549,6 @@ public class EnhancedDocumentService {
                 .version(document.getVersion())
                 .status(document.getStatus())
                 .downloadUrl(downloadUrl)
-
                 .taskId(document.getTaskId())
                 .phaseId(document.getPhaseId())
                 .latitude(document.getLatitude())
@@ -545,6 +579,7 @@ public class EnhancedDocumentService {
                     .notifyUsers(request.getNotifyUsers())
                     .latitude(document.getLatitude())
                     .longitude(document.getLongitude())
+                    .folderId(document.getFolderId())
                     .timestamp(LocalDateTime.now())
                     .build();
 
@@ -564,6 +599,7 @@ public class EnhancedDocumentService {
                     .approvalStatus(document.getApprovalStatus().name())
                     .comments(document.getApproverComments())
                     .updateTaskProgress(request.getUpdateTaskProgress())
+                    .folderId(document.getFolderId())
                     .timestamp(LocalDateTime.now())
                     .build();
 

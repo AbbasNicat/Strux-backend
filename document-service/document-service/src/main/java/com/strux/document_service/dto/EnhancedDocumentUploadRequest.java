@@ -1,5 +1,6 @@
 package com.strux.document_service.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.strux.document_service.enums.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
@@ -10,6 +11,7 @@ import java.util.Set;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class EnhancedDocumentUploadRequest {
 
     @NotNull
@@ -18,6 +20,8 @@ public class EnhancedDocumentUploadRequest {
     private DocumentCategory category;
     private String description;
     private Set<String> tags;
+
+    private String folderId;
 
     @NotNull
     private EntityType entityType;

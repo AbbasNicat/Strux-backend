@@ -1,8 +1,5 @@
 package com.strux.unit_service.dto;
 
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import com.strux.unit_service.enums.*;
 import lombok.*;
 
@@ -19,7 +16,12 @@ public class UnitSearchRequest {
     private String keyword;
     private String companyId;
     private String projectId;
-    private String buildingId;
+
+    // ========== HIERARCHICAL SEARCH ==========
+    private String parentUnitId;  // ✅ Search by parent building
+    private Boolean hasSubUnits;  // ✅ Filter buildings vs apartments
+
+    private String buildingId;  // Legacy
     private String blockName;
 
     private UnitType type;
@@ -54,6 +56,18 @@ public class UnitSearchRequest {
     private Boolean hasTerrace;
     private Boolean isSmartHome;
     private Boolean hasParkingSpace;
+
+    // ========== FLOOR PLAN FILTERS ==========
+    private Boolean hasFloorPlan;  // ✅ Filter units with floor plan
+
+    private BigDecimal minFloorPlanWidth;  // ✅ Min width in meters
+    private BigDecimal maxFloorPlanWidth;  // ✅ Max width in meters
+
+    private BigDecimal minFloorPlanLength;  // ✅ Min length in meters
+    private BigDecimal maxFloorPlanLength;  // ✅ Max length in meters
+
+    private BigDecimal minCeilingHeight;  // ✅ Min ceiling height
+    private BigDecimal maxCeilingHeight;  // ✅ Max ceiling height
 
     private List<String> tags;
 

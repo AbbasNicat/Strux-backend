@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class ProgressDocumentUploadedEvent {
     private String eventType = "PROGRESS_DOCUMENT_UPLOADED";
+    private String folderId;
     private String documentId;
     private String taskId;
     private String unitId;

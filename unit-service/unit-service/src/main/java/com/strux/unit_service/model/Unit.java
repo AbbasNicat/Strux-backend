@@ -26,51 +26,72 @@ public class Unit {
     private String unitName;
 
     @Column(columnDefinition = "TEXT")
+    private String footprintJson; // Frontend ucun maps koordinatlari poligon
+
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     private String companyId;
     private String projectId;
+
+    private String parentUnitId;
+    private Boolean hasSubUnits;
+    private Integer subUnitsCount;
+
+    // Legacy fields (deprecated, use parentUnitId instead)
+    @Deprecated
     private String buildingId;
 
     private String blockName;
     private Integer floor;
     private String section;
 
-
     @Enumerated(EnumType.STRING)
-    private UnitType type;  // APARTMENT, VILLA, OFFICE, SHOP, PARKING, STORAGE
+    private UnitType type;  // BUILDING, APARTMENT, VILLA, OFFICE, SHOP, PARKING, STORAGE
 
     private BigDecimal grossArea;
     private BigDecimal netArea;
-    private Integer roomCount;
+    private Integer roomCount;  // Total rooms
     private Integer bedroomCount;
     private Integer bathroomCount;
     private Integer balconyCount;
 
     @Enumerated(EnumType.STRING)
-    private Direction direction;  // NORTH, SOUTH, EAST, WEST, NORTH_EAST, etc.
+    private Direction direction;
 
     private Boolean hasGarden;
     private BigDecimal gardenArea;
     private Boolean hasTerrace;
     private BigDecimal terraceArea;
 
-    @Enumerated(EnumType.STRING)
-    private UnitStatus status;  // PLANNED, IN_CONSTRUCTION, COMPLETED, SOLD, DELIVERED
+    // ========== FLOOR PLAN DATA ==========
+    @Column(columnDefinition = "TEXT")
+    private String floorPlanJson;  // ✅ Fabric.js canvas JSON
+    @Column(columnDefinition = "TEXT")
+    private String floorPlanImageUrl;  // ✅ PNG/SVG export
 
-    private Integer completionPercentage;  // 0-100
+    private BigDecimal floorPlanWidth;  // ✅ Actual width in meters
+    private BigDecimal floorPlanLength;  // ✅ Actual length in meters
+    private BigDecimal ceilingHeight;  // ✅ Ceiling height in meters
+
+    // ========== CONSTRUCTION STATUS ==========
+    @Enumerated(EnumType.STRING)
+    private UnitStatus status;
+
+    private Integer completionPercentage;
 
     @Enumerated(EnumType.STRING)
-    private ConstructionPhase currentPhase;  // FOUNDATION, STRUCTURE, ROUGH_CONSTRUCTION, FINISHING, etc.
+    private ConstructionPhase currentPhase;
 
     private LocalDateTime constructionStartDate;
     private LocalDateTime estimatedCompletionDate;
     private LocalDateTime actualCompletionDate;
 
+    // ========== SALE INFO ==========
     @Enumerated(EnumType.STRING)
-    private SaleStatus saleStatus;  // AVAILABLE, RESERVED, SOLD, NOT_FOR_SALE
+    private SaleStatus saleStatus;
 
-    private String ownerId;  // Sahibkar ID
+    private String ownerId;
     private String ownerName;
     private String ownerEmail;
     private String ownerPhone;
@@ -81,35 +102,37 @@ public class Unit {
 
     private BigDecimal listPrice;
     private BigDecimal salePrice;
-    private String currency;  // AZN, USD, EUR
+    private String currency;
     private BigDecimal pricePerSquareMeter;
 
     private BigDecimal totalPaid;
     private BigDecimal remainingPayment;
-    private Integer paymentPercentage;  // Ödəniş faizi
+    private Integer paymentPercentage;
 
+    // ========== QUALITY & INSPECTIONS ==========
     @ElementCollection
     @CollectionTable(name = "unit_inspections", joinColumns = @JoinColumn(name = "unit_id"))
     private List<InspectionRecord> inspections;
 
-    private Integer qualityScore;  // 1-100
+    private Integer qualityScore;
     private Boolean hasDefects;
     private Integer defectCount;
 
+    // ========== FEATURES & MEDIA ==========
     @ElementCollection
     @CollectionTable(name = "unit_features", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "feature")
-    private List<String> features;  // Smart Home, Central Heating, Security System, etc.
+    private List<String> features;
 
     @ElementCollection
     @CollectionTable(name = "unit_documents", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "document_id")
-    private List<String> documentIds;  // Floor plans, contracts, certificates
+    private List<String> documentIds;
 
     @ElementCollection
     @CollectionTable(name = "unit_images", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "image_url")
-    private List<String> imageUrls;  // Photos
+    private List<String> imageUrls;
 
     @ElementCollection
     @CollectionTable(name = "unit_videos", joinColumns = @JoinColumn(name = "unit_id"))
@@ -118,23 +141,25 @@ public class Unit {
 
     private String virtualTourUrl;
 
+    // ========== LOCATION ==========
     private Double latitude;
     private Double longitude;
 
-    @OneToMany(mappedBy = "unitId", cascade = CascadeType.ALL)
+    // ========== WORK ITEMS ==========
+    @OneToMany(mappedBy = "unitId", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UnitWorkItem> workItems;
 
-
+    // ========== NOTIFICATIONS ==========
     private Boolean notifyOwnerOnProgress;
     private Boolean notifyOwnerOnCompletion;
 
-
+    // ========== ADDITIONAL INFO ==========
     @ElementCollection
     @CollectionTable(name = "unit_tags", joinColumns = @JoinColumn(name = "unit_id"))
     @Column(name = "tag")
     private List<String> tags;
 
-    private String energyCertificate;  // Energy efficiency rating
+    private String energyCertificate;
     private Boolean isSmartHome;
     private Boolean hasParkingSpace;
     private String parkingNumber;
@@ -150,5 +175,6 @@ public class Unit {
 
     private Integer viewCount;
 
+    @Column(columnDefinition = "TEXT")
     private String notes;
 }

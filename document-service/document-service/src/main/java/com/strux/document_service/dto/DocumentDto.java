@@ -21,6 +21,8 @@ public class DocumentDto {
     private String mimeType;
     private String fileExtension;
 
+    private String folderId;
+
     private DocumentType documentType;
     private DocumentCategory category;
     private String description;

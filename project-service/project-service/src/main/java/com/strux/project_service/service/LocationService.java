@@ -63,6 +63,57 @@ public class LocationService {
     // GOOGLE MAPS API METHODS (Company'den bağımsız)
     // ============================================
 
+    // LocationService.java
+    public LocationDetailDTO reverseGeocode(Double latitude, Double longitude) {
+        try {
+            String url = String.format(
+                    "https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
+                    latitude, longitude, apiKey
+            );
+
+            ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
+            Map<String, Object> body = response.getBody();
+
+            if (body == null || !"OK".equals(body.get("status"))) {
+                throw new RuntimeException("Geocoding failed");
+            }
+
+            List<Map<String, Object>> results = (List<Map<String, Object>>) body.get("results");
+            if (results.isEmpty()) {
+                throw new RuntimeException("No results found");
+            }
+
+            Map<String, Object> result = results.get(0);
+            List<Map<String, Object>> components =
+                    (List<Map<String, Object>>) result.get("address_components");
+
+            return LocationDetailDTO.builder()
+                    .placeId((String) result.get("place_id"))
+                    .formattedAddress((String) result.get("formatted_address"))
+                    .latitude(latitude)
+                    .longitude(longitude)
+                    .city(extractComponent(components, "locality"))
+                    .district(extractComponent(components, "sublocality"))
+                    .country(extractComponent(components, "country"))
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Reverse geocoding error", e);
+            throw new RuntimeException("Reverse geocoding failed: " + e.getMessage());
+        }
+    }
+
+    private String extractComponent(List<Map<String, Object>> components, String type) {
+        return components.stream()
+                .filter(c -> {
+                    List<String> types = (List<String>) c.get("types");
+                    return types != null && types.contains(type);
+                })
+                .map(c -> (String) c.get("long_name"))
+                .findFirst()
+                .orElse(null);
+    }
+
     public List<LocationSuggestionDTO> searchLocation(String query) {
         try {
             String url = "https://places.googleapis.com/v1/places:autocomplete";

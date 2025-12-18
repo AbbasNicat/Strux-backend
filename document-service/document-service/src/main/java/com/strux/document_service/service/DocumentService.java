@@ -3,7 +3,10 @@ package com.strux.document_service.service;
 import com.strux.document_service.dto.*;
 import com.strux.document_service.enums.*;
 import com.strux.document_service.model.Document;
+import com.strux.document_service.model.Folder;
 import com.strux.document_service.repository.DocumentRepository;
+import com.strux.document_service.repository.FolderRepository;
+import jakarta.ws.rs.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -21,6 +24,7 @@ import java.util.stream.Collectors;
 public class DocumentService {
 
     private final DocumentRepository documentRepository;
+    private final FolderRepository folderRepository;  // EKLE
     private final MinioStorageService storageService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -30,8 +34,18 @@ public class DocumentService {
             // Validate file
             validateFile(file);
 
-            // Generate folder path based on entity
-            String folder = generateFolderPath(request);
+            String folder;
+            if (request.getFolderId() != null) {
+                Folder targetFolder = folderRepository.findByIdAndIsDeletedFalse(request.getFolderId())
+                        .orElseThrow(() -> new RuntimeException("Folder not found"));
+
+                // MinIO path: folder'ın path'i + category
+                folder = targetFolder.getFolderPath().substring(1) + "/" +
+                        (request.getCategory() != null ? request.getCategory().name().toLowerCase() : "general");
+            } else {
+                // Eski sistem (geriye dönük uyumluluk)
+                folder = generateFolderPath(request);
+            }
 
             // Upload to MinIO
             String filePath = storageService.uploadFile(file, folder);
@@ -55,6 +69,7 @@ public class DocumentService {
                     .companyId(request.getCompanyId())
                     .isPublic(request.getIsPublic() != null ? request.getIsPublic() : false)
                     .status(DocumentStatus.ACTIVE)
+                    .folderId(request.getFolderId())  // EKLE
                     .build();
 
             document = documentRepository.save(document);
@@ -114,6 +129,14 @@ public class DocumentService {
         return toDto(document);
     }
 
+    // YENİ: Folder'a göre dokümanları getir
+    public List<DocumentDto> getDocumentsByFolder(String folderId) {
+        return documentRepository.findByFolderIdAndStatus(folderId, DocumentStatus.ACTIVE)
+                .stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
     public List<DocumentDto> getDocumentsByEntity(EntityType entityType, String entityId) {
         return documentRepository.findByEntityTypeAndEntityIdAndStatus(entityType, entityId, DocumentStatus.ACTIVE)
                 .stream()
@@ -159,6 +182,16 @@ public class DocumentService {
             document.setIsPublic(request.getIsPublic());
         }
 
+        document = documentRepository.save(document);
+
+        return toDto(document);
+    }
+
+    public DocumentDto moveDocument(String documentId, String folderId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException("Document not found"));
+
+        document.setFolderId(folderId);
         document = documentRepository.save(document);
 
         return toDto(document);
@@ -226,6 +259,7 @@ public class DocumentService {
         }
     }
 
+    // Eski sistem için geriye dönük uyumluluk
     private String generateFolderPath(DocumentUploadRequest request) {
         StringBuilder path = new StringBuilder();
 
@@ -282,7 +316,7 @@ public class DocumentService {
     }
 
     private DocumentDto toDto(Document document) {
-        return DocumentDto.builder()
+        DocumentDto.DocumentDtoBuilder builder = DocumentDto.builder()
                 .id(document.getId())
                 .fileName(document.getFileName())
                 .originalFileName(document.getOriginalFileName())
@@ -301,8 +335,18 @@ public class DocumentService {
                 .isPublic(document.getIsPublic())
                 .version(document.getVersion())
                 .status(document.getStatus())
-                .downloadUrl(storageService.getPresignedUrl(document.getFilePath(), 60)) // 1 hour
-                .build();
+                .downloadUrl(storageService.getPresignedUrl(document.getFilePath(), 60)); // 1 hour
+
+        // Folder bilgisini ekle (EKLE)
+        if (document.getFolderId() != null) {
+            folderRepository.findById(document.getFolderId())
+                    .ifPresent(folder -> {
+                        // FolderDto'yu DocumentDto'ya eklemek isterseniz
+                        // Veya sadece folderId'yi gönderin
+                    });
+        }
+
+        return builder.build();
     }
 
     private void publishDocumentUploadedEvent(Document document) {
@@ -314,6 +358,7 @@ public class DocumentService {
         event.put("entityId", document.getEntityId());
         event.put("uploadedBy", document.getUploadedBy());
         event.put("companyId", document.getCompanyId());
+        event.put("folderId", document.getFolderId());  // EKLE
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("document.uploaded", event);
@@ -329,6 +374,7 @@ public class DocumentService {
         event.put("entityType", document.getEntityType());
         event.put("entityId", document.getEntityId());
         event.put("companyId", document.getCompanyId());
+        event.put("folderId", document.getFolderId());  // EKLE
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("document.deleted", event);

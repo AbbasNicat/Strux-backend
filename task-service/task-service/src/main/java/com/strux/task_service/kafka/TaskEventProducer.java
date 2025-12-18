@@ -52,56 +52,106 @@ public class TaskEventProducer {
         Map<String, Object> event = new HashMap<>();
         event.put("eventType", "task.assigned");
         event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
         event.put("companyId", task.getCompanyId());
         event.put("projectId", task.getProjectId());
         event.put("previousAssignees", previousAssignees);
         event.put("newAssignees", task.getAssignees());
+        event.put("createdBy", task.getCreatedBy());
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("task.assigned", event);
         log.info("Task assigned event published: {}", task.getId());
     }
 
-    public void publishTaskStatusChangedEvent(Task task, TaskStatus oldStatus) {
+    // ✅ updatedBy parametresi eklendi
+    public void publishTaskStatusChangedEvent(Task task, TaskStatus oldStatus, String updatedBy) {
         Map<String, Object> event = new HashMap<>();
         event.put("eventType", "task.status.changed");
         event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
         event.put("companyId", task.getCompanyId());
         event.put("projectId", task.getProjectId());
         event.put("oldStatus", oldStatus);
         event.put("newStatus", task.getStatus());
+        event.put("createdBy", task.getCreatedBy());
+        event.put("assignees", task.getAssignees());
+        event.put("updatedBy", updatedBy); // ✅ EKLENDI
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("task.status.changed", event);
         log.info("Task status changed event published: {} -> {}", oldStatus, task.getStatus());
     }
 
-    public void publishTaskProgressUpdatedEvent(Task task) {
+    // ✅ updatedBy parametresi eklendi
+    public void publishTaskProgressUpdatedEvent(Task task, String updatedBy) {
         Map<String, Object> event = new HashMap<>();
         event.put("eventType", "task.progress.updated");
         event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
         event.put("companyId", task.getCompanyId());
         event.put("projectId", task.getProjectId());
         event.put("progressPercentage", task.getProgressPercentage());
         event.put("actualHours", task.getActualHours());
+        event.put("createdBy", task.getCreatedBy()); // ✅ EKLENDI
+        event.put("assignees", task.getAssignees()); // ✅ EKLENDI
+        event.put("updatedBy", updatedBy); // ✅ EKLENDI
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("task.progress.updated", event);
         log.info("Task progress updated event published: {}%", task.getProgressPercentage());
     }
 
-    public void publishTaskCompletedEvent(Task task) {
+    public void publishTaskCompletedEvent(Task task, String completedBy) {
         Map<String, Object> event = new HashMap<>();
         event.put("eventType", "task.completed");
         event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
         event.put("companyId", task.getCompanyId());
         event.put("projectId", task.getProjectId());
         event.put("completedAt", task.getCompletedAt());
-        event.put("assignedTo", task.getAssignedTo());
+        event.put("completedBy", completedBy);
+        event.put("createdBy", task.getCreatedBy());
+        event.put("assignees", task.getAssignees());
         event.put("timestamp", LocalDateTime.now());
 
         kafkaTemplate.send("task.completed", event);
         log.info("Task completed event published: {}", task.getId());
+    }
+
+    // ✅ YENİ: Task Approved Event
+    public void publishTaskApprovedEvent(Task task, String approvedBy) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("eventType", "task.approved");
+        event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
+        event.put("companyId", task.getCompanyId());
+        event.put("projectId", task.getProjectId());
+        event.put("approvedBy", approvedBy);
+        event.put("completedBy", task.getAssignees() != null && !task.getAssignees().isEmpty()
+                ? task.getAssignees().get(0) : null);
+        event.put("assignees", task.getAssignees());
+        event.put("timestamp", LocalDateTime.now());
+
+        kafkaTemplate.send("task.approved", event);
+        log.info("Task approved event published: {}", task.getId());
+    }
+
+    // ✅ YENİ: Task Rejected Event
+    public void publishTaskRejectedEvent(Task task, String rejectedBy, String rejectionReason) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("eventType", "task.rejected");
+        event.put("taskId", task.getId());
+        event.put("title", task.getTitle());
+        event.put("companyId", task.getCompanyId());
+        event.put("projectId", task.getProjectId());
+        event.put("rejectedBy", rejectedBy);
+        event.put("rejectionReason", rejectionReason);
+        event.put("assignees", task.getAssignees());
+        event.put("timestamp", LocalDateTime.now());
+
+        kafkaTemplate.send("task.rejected", event);
+        log.info("Task rejected event published: {}", task.getId());
     }
 
     public void publishTaskDeletedEvent(Task task, boolean hardDelete) {

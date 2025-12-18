@@ -1,64 +1,108 @@
 package com.strux.user_service.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.UUID;
+import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class FileStorageService {
 
-    @Value("${app.upload.dir:uploads}")
-    private String uploadDir;
+    private final WebClient webClient;
 
-    @Value("${app.base-url:http://localhost:8080}")
-    private String baseUrl;
+    @Value("${document.service.url:http://localhost:9089}")
+    private String documentServiceUrl;
 
     public String uploadFile(MultipartFile file, String subDirectory) throws IOException {
         try {
-            Path uploadPath = Paths.get(uploadDir, subDirectory);
-            Files.createDirectories(uploadPath);
+            log.info("📤 Uploading file to Document Service (MinIO)");
+            log.info("   File: {}, Size: {} bytes", file.getOriginalFilename(), file.getSize());
 
-            String originalFilename = file.getOriginalFilename();
-            String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            String newFilename = UUID.randomUUID() + extension;
+            String userId = subDirectory.replace("avatars/", "");
 
-            Path targetPath = uploadPath.resolve(newFilename);
-            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+            // ✅ Basit multipart data - @RequestParam'lar için
+            MultipartBodyBuilder builder = new MultipartBodyBuilder();
 
-            String fileUrl = baseUrl + "/uploads/" + subDirectory + "/" + newFilename;
-            log.info("File uploaded successfully: {}", fileUrl);
+            // File part
+            builder.part("file", file.getResource())
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "form-data; name=file; filename=" + file.getOriginalFilename());
 
-            return fileUrl;
+            // Request parameters as simple parts
+            builder.part("companyId", "system");
+            builder.part("entityType", "USER");
+            builder.part("entityId", userId);
+            builder.part("documentType", "AVATAR");
+            builder.part("category", "PROFILE");
+            builder.part("description", "User avatar");
 
-        } catch (IOException e) {
-            log.error("Failed to upload file: {}", e.getMessage());
-            throw new IOException("Failed to upload file: " + e.getMessage());
+            // Get JWT token
+            String authToken = extractAuthToken();
+
+            // ✅ Yeni avatar endpoint'e istek
+            var requestSpec = webClient
+                    .post()
+                    .uri(documentServiceUrl + "/api/documents/avatar/upload")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .header("X-User-Id", userId);
+
+            if (authToken != null && !authToken.isEmpty()) {
+                requestSpec = requestSpec.header("Authorization", "Bearer " + authToken);
+                log.info("🔐 Authorization header added");
+            }
+
+            Map<String, Object> response = requestSpec
+                    .body(BodyInserters.fromMultipartData(builder.build()))
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+
+            if (response != null && response.containsKey("fileUrl")) {
+                String fileUrl = (String) response.get("fileUrl");
+                log.info("✅ File uploaded successfully: {}", fileUrl);
+                return fileUrl;
+            }
+
+            throw new IOException("Failed to get file URL from Document Service");
+
+        } catch (Exception e) {
+            log.error("❌ File upload failed: {}", e.getMessage(), e);
+            throw new IOException("Failed to upload file: " + e.getMessage(), e);
         }
+    }
+
+    private String extractAuthToken() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof Jwt) {
+                return ((Jwt) authentication.getPrincipal()).getTokenValue();
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Could not extract auth token: {}", e.getMessage());
+        }
+        return null;
     }
 
     public void deleteFile(String fileUrl) throws IOException {
         try {
-            String relativePath = fileUrl.replace(baseUrl + "/uploads/", "");
-            Path filePath = Paths.get(uploadDir, relativePath);
-
-            if (Files.exists(filePath)) {
-                Files.delete(filePath);
-                log.info("File deleted successfully: {}", fileUrl);
-            }
-
-        } catch (IOException e) {
-            log.error("Failed to delete file: {}", e.getMessage());
-            throw new IOException("Failed to delete file: " + e.getMessage());
+            log.info("🗑️ Attempting to delete file from MinIO: {}", fileUrl);
+            log.info("ℹ️ File deletion from MinIO not implemented yet");
+        } catch (Exception e) {
+            log.error("❌ File deletion failed: {}", e.getMessage(), e);
         }
     }
 }
-

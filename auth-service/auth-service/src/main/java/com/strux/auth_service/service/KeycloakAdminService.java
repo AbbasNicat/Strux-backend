@@ -330,7 +330,7 @@ public class KeycloakAdminService {
         }
     }
 
-    private RealmResource getRealmResource() {
+    public RealmResource getRealmResource() {
         try {
             return keycloak.realm(realm);
         } catch (Exception e) {

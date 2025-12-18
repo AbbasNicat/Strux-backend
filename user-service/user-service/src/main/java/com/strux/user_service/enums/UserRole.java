@@ -6,6 +6,7 @@ public enum UserRole {
     COMPANY_ADMIN,   // Sirket admini
     PROJECT_MANAGER, // Proje manager
     WORKER,          // Kole
-    UNIT_OWNER,      // Konut sahibi
+    UNIT_OWNER,
+    HOMEOWNER,
     VIEWER           // Viewer
 }

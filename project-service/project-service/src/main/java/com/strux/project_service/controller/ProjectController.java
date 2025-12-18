@@ -20,6 +20,13 @@ public class ProjectController {
 
     private final ProjectService projectService;
 
+    @GetMapping("/company/{companyId}/stats")
+    public ResponseEntity<List<ProjectStatsResponse>> getCompanyProjectStats(
+            @PathVariable String companyId
+    ) {
+        return ResponseEntity.ok(projectService.getCompanyProjectStats(companyId));
+    }
+
     @PostMapping
     public ResponseEntity<ProjectResponse> createProject(@Valid @RequestBody CreateProjectRequest request) {
         log.info("Creating new project: {}", request.getName());
@@ -122,4 +129,5 @@ public class ProjectController {
         String companyId = projectService.getCompanyIdByProjectId(projectId);
         return ResponseEntity.ok(companyId);
     }
+
 }
