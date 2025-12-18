@@ -1,0 +1,114 @@
+{
+  "realm": "Strux-realm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  
+  "clients": [
+    {
+      "clientId": "Strux-backend",
+      "name": "Strux Backend Services",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "APWka3cMRiX8YVtfdVp1L8nC4YyWseK6",
+      "redirectUris": [
+        "https://app.strux.az/*",
+        "https://admin.strux.az/*",
+        "http://localhost:5173/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "https://app.strux.az",
+        "https://admin.strux.az",
+        "http://localhost:5173",
+        "http://localhost:3000"
+      ],
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "standardFlowEnabled": true
+    },
+    {
+      "clientId": "Strux-frontend",
+      "name": "Strux Frontend App",
+      "enabled": true,
+      "publicClient": true,
+      "redirectUris": [
+        "https://app.strux.az/*",
+        "https://admin.strux.az/*",
+        "http://localhost:5173/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "https://app.strux.az",
+        "https://admin.strux.az",
+        "http://localhost:5173",
+        "http://localhost:3000"
+      ],
+      "protocol": "openid-connect",
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "standardFlowEnabled": true
+    }
+  ],
+  
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Administrator role"
+      },
+      {
+        "name": "MANAGER",
+        "description": "Manager role"
+      },
+      {
+        "name": "USER",
+        "description": "Regular user role"
+      },
+      {
+        "name": "WORKER",
+        "description": "Worker role"
+      }
+    ]
+  },
+  
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@strux.az",
+      "emailVerified": true,
+      "firstName": "System",
+      "lastName": "Administrator",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["ADMIN"],
+      "clientRoles": {
+        "Strux-backend": ["admin"]
+      }
+    }
+  ],
+  
+  "accessTokenLifespan": 3600,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800
+}

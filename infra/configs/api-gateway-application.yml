@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: api-gateway
+  profiles:
+    active: prod
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - "https://app.strux.az"
+              - "https://admin.strux.az"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+      routes:
+        - id: auth-service
+          uri: http://auth-service:9091
+          predicates:
+            - Path=/api/auth/**
+        - id: user-service
+          uri: http://user-service:9093
+          predicates:
+            - Path=/api/users/**,/api/workers/**
+        - id: company-service
+          uri: http://company-service:9094
+          predicates:
+            - Path=/api/companies/**
+        - id: project-service
+          uri: http://project-service:9095
+          predicates:
+            - Path=/api/projects/**,/api/locations/**
+        - id: task-service
+          uri: http://task-service:9096
+          predicates:
+            - Path=/api/tasks/**
+        - id: issue-service
+          uri: http://issue-service:9097
+          predicates:
+            - Path=/api/issues/**
+        - id: notification-service
+          uri: http://notification-service:9098
+          predicates:
+            - Path=/api/notifications/**
+        - id: unit-service
+          uri: http://unit-service:9099
+          predicates:
+            - Path=/api/units/**
+        - id: document-service
+          uri: http://document-service:9089
+          predicates:
+            - Path=/api/documents/**
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 60000
+server:
+  port: 8888
+logging:
+  level:
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
