@@ -4,13 +4,13 @@ spring:
 
   cloud:
     gateway:
-      # ==================== GLOBAL CORS ====================
       globalcors:
         cors-configurations:
           '[/**]':
             allowed-origins:
-              - "https://app.strux.az"
-              - "https://admin.strux.az"
+              - "https://struxtech.app"
+              - "https://www.struxtech.app"
+              - "https://admin.struxtech.app"
             allowed-methods:
               - GET
               - POST
